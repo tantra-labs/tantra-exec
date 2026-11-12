@@ -1,4 +1,4 @@
-# Gaps Index — `vyapaar-exec`
+# Gaps Index — `tantra-exec`
 
 Per workspace rule `.agents/rules/gap-tracking.md`:
 - **Gaps** (`docs/gaps/XXXX-*.md`) are individual missing features, endpoints, or stubs.
@@ -10,10 +10,10 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 | # | Title | Scope | Status |
 |---|-------|-------|--------|
-| 0001 | Angel One SmartAPI 2.0 execution adapter | `vyapaar-exec-angelone` | Stub — placeholder module only |
+| 0001 | Angel One SmartAPI 2.0 execution adapter | `tantra-exec-angelone` | Stub — placeholder module only |
 
 ## Closed Gaps
 
 | # | Title | Closed In |
 |---|-------|-----------|
-| 0002 | Audit journal storage reconciliation (SQLite WAL naming vs. JSONL segment WAL) | Closed — JSONL segment WAL is canonical for `vyapaar-exec` (tamper-evident journal + SEBI Annexure export); the runtime's `SqliteAuditLedger` is the complementary operational SQLite store. See `docs/design/code-audit.md` |
+| 0002 | Audit journal storage reconciliation (SQLite WAL naming vs. JSONL segment WAL) | Closed — JSONL segment WAL is canonical for `tantra-exec` (tamper-evident journal + SEBI Annexure export); the runtime's `SqliteAuditLedger` is the complementary operational SQLite store. See `docs/design/code-audit.md` |

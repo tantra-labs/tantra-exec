@@ -1,6 +1,6 @@
-# `vyapaar-exec-core` — Token-Bucket Rate Limiter Reference
+# `tantra-exec-core` — Token-Bucket Rate Limiter Reference
 
-Documents `crates/vyapaar-exec-core/src/ratelimit.rs`: an adaptive token-bucket
+Documents `crates/tantra-exec-core/src/ratelimit.rs`: an adaptive token-bucket
 rate limiter with strict-priority wait queues shielding every broker adapter
 from HTTP 429 bans.
 

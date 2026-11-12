@@ -1,4 +1,4 @@
-# `vyapaar-exec` Agent Guidelines & Architecture Invariants
+# `tantra-exec` Agent Guidelines & Architecture Invariants
 
 **Subsystem**: Hand (Order Routing & Execution)
 **Language**: Rust
@@ -7,7 +7,7 @@
 ---
 
 ## 1. Role & Architectural Hints
-* `vyapaar-exec` handles live execution and broker interaction:
+* `tantra-exec` handles live execution and broker interaction:
   1. **Token-Bucket Rate Limiter**: Per-broker API rate limiting (e.g. Zerodha 10 req/s, Upstox 20 req/s) with queueing and prioritization.
   2. **Freeze Slicer**: Automatically slices large orders exceeding exchange quantity freeze limits (e.g., slicing 5,000 NIFTY into 1,800 + 1,800 + 1,400).
   3. **Smart Order Router (SOR)**: Routes orders to best execution venues (NSE vs. BSE).

@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/vyapaar-exec-core",
-  "crates/vyapaar-exec-auth",
-  "crates/vyapaar-exec-router",
-  "crates/vyapaar-exec-slicer",
-  "crates/vyapaar-exec-audit",
-  "crates/vyapaar-exec-zerodha",
-  "crates/vyapaar-exec-upstox",
-  "crates/vyapaar-exec-angelone",
+  "crates/tantra-exec-core",
+  "crates/tantra-exec-auth",
+  "crates/tantra-exec-router",
+  "crates/tantra-exec-slicer",
+  "crates/tantra-exec-audit",
+  "crates/tantra-exec-zerodha",
+  "crates/tantra-exec-upstox",
+  "crates/tantra-exec-angelone",
 ]
 
 [workspace.package]
@@ -16,22 +16,22 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "AGPL-3.0"
-repository = "https://github.com/vyapaar-labs/vyapaar-exec"
+repository = "https://github.com/tantra-labs/tantra-exec"
 
 [workspace.dependencies]
-# Canonical vyapaar-labs dependencies (Tier 0 shared kernel + Tier 1A risk gate).
-vyapaar-core = { path = "../vyapaar-core" }
-vyapaar-risk = { path = "../vyapaar-risk" }
+# Canonical tantra-labs dependencies (Tier 0 shared kernel + Tier 1A risk gate).
+tantra-core = { path = "../tantra-core" }
+tantra-risk = { path = "../tantra-risk" }
 
 # Internal bounded-context crates (execution gateway).
-vyapaar-exec-core = { path = "crates/vyapaar-exec-core" }
-vyapaar-exec-auth = { path = "crates/vyapaar-exec-auth" }
-vyapaar-exec-slicer = { path = "crates/vyapaar-exec-slicer" }
-vyapaar-exec-router = { path = "crates/vyapaar-exec-router" }
-vyapaar-exec-audit = { path = "crates/vyapaar-exec-audit" }
-vyapaar-exec-zerodha = { path = "crates/vyapaar-exec-zerodha" }
-vyapaar-exec-upstox = { path = "crates/vyapaar-exec-upstox" }
-vyapaar-exec-angelone = { path = "crates/vyapaar-exec-angelone" }
+tantra-exec-core = { path = "crates/tantra-exec-core" }
+tantra-exec-auth = { path = "crates/tantra-exec-auth" }
+tantra-exec-slicer = { path = "crates/tantra-exec-slicer" }
+tantra-exec-router = { path = "crates/tantra-exec-router" }
+tantra-exec-audit = { path = "crates/tantra-exec-audit" }
+tantra-exec-zerodha = { path = "crates/tantra-exec-zerodha" }
+tantra-exec-upstox = { path = "crates/tantra-exec-upstox" }
+tantra-exec-angelone = { path = "crates/tantra-exec-angelone" }
 
 # External dependencies ported from the honba-te workspace manifest.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }

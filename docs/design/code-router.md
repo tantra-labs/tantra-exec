@@ -1,6 +1,6 @@
-# `vyapaar-exec-router` — Smart Order Router Reference
+# `tantra-exec-router` — Smart Order Router Reference
 
-Documents `crates/vyapaar-exec-router/src/`: the resilient multi-broker Smart
+Documents `crates/tantra-exec-router/src/`: the resilient multi-broker Smart
 Order Router with cost-optimized routing, health circuit breakers, SEBI OTR
 balancing, and automated failover, plus the legacy risk-integrated router.
 
@@ -94,11 +94,11 @@ protecting brand-new accounts from cold-start rejection.
 ## Pre-Trade Risk Gating
 
 Pre-trade SEBI risk gating stays upstream of `ResilientRouter`: wrap registry
-executors in `vyapaar_exec_core::RiskGatedExecutor`, or use the legacy
+executors in `tantra_exec_core::RiskGatedExecutor`, or use the legacy
 `SmartOrderRouter` for the integrated risk-engine flow.
 
 ## Related
 
 * `code-core.md` — `RiskGatedExecutor` (mandatory pre-trade gate), `RateLimitedBroker`.
 * `code-slicer.md` — sliced child orders are routed here.
-* `vyapaar_risk::RiskEngine` — pre-trade risk gate (in `vyapaar-risk`).
+* `tantra_risk::RiskEngine` — pre-trade risk gate (in `tantra-risk`).

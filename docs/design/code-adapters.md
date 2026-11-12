@@ -1,11 +1,11 @@
 # Broker Execution Adapters — Zerodha / Upstox / Angel One
 
-Documents the first-party broker ACLs in `crates/vyapaar-exec-{zerodha,upstox,angelone}/`.
-All adapters implement `vyapaar_exec_core::BrokerExecutor` (and, where
+Documents the first-party broker ACLs in `crates/tantra-exec-{zerodha,upstox,angelone}/`.
+All adapters implement `tantra_exec_core::BrokerExecutor` (and, where
 supported, `IcebergOrderExecutor`), translate wire payloads through the exact
 `wire`/`decimal` helpers, and normalize broker errors into `BrokerError`.
 
-## Zerodha (`vyapaar-exec-zerodha`)
+## Zerodha (`tantra-exec-zerodha`)
 
 Kite Connect v3 adapter (`https://api.kite.trade`, 15 s request timeout):
 
@@ -26,7 +26,7 @@ translates HTTP status + `error_type` literals (429/`TooManyRequests` →
 `NetworkException`/`GatewayException` → `Transport`, else `Rejected`).
 `mapping.rs` holds the wire-token → canonical mapping (via `BrokerEnumMap`).
 
-## Upstox (`vyapaar-exec-upstox`)
+## Upstox (`tantra-exec-upstox`)
 
 Upstox v2 adapter (`https://api.upstox.com/v2`, OAuth2 Bearer, 15 s timeout):
 
@@ -47,11 +47,11 @@ suffixes. `map_upstox_error` handles the `{"errors":[…]}` envelope
 `Auth`, `UDI*`/invalid → `InvalidRequest`, 503/unavailable → `Transport`,
 else `Rejected`). `TimeInForce::Gtc` falls back to `DAY`.
 
-## Angel One (`vyapaar-exec-angelone`)
+## Angel One (`tantra-exec-angelone`)
 
 **Stub only.** `src/lib.rs` is a placeholder doc comment and
 `tests/integration_tests.rs` is empty; `Cargo.toml` declares only
-`vyapaar-core` + `serde` + `thiserror`. The SmartAPI 2.0 adapter (REST
+`tantra-core` + `serde` + `thiserror`. The SmartAPI 2.0 adapter (REST
 `loginByPassword`/TOTP session, order REST, SmartStream order feed, product
 tokens `DELIVERY`/`INTRADAY`/`CARRYFORWARD`/`MTF`, SmartAPI 10/s preset) is not
 implemented — see `docs/gaps/0001-angelone-adapter.md` and

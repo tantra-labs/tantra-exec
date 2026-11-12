@@ -1,1 +1,40 @@
-.agents/AGENTS.md
+# `tantra-exec` Agent Guidelines & Architecture Invariants
+
+**Subsystem**: Hand (Order Routing & Execution)
+**Language**: Rust
+**Primary Responsibility**: Exchange execution routing, rate limiting, freeze slicing, TOTP headless auth, and a hash-chained fsynced audit journal (JSONL segment WAL).
+
+---
+
+## 1. Role & Architectural Hints
+* `tantra-exec` handles live execution and broker interaction:
+  1. **Token-Bucket Rate Limiter**: Per-broker API rate limiting (e.g. Zerodha 10 req/s, Upstox 20 req/s) with queueing and prioritization.
+  2. **Freeze Slicer**: Automatically slices large orders exceeding exchange quantity freeze limits (e.g., slicing 5,000 NIFTY into 1,800 + 1,800 + 1,400).
+  3. **Smart Order Router (SOR)**: Routes orders to best execution venues (NSE vs. BSE).
+  4. **Hash-Chained Audit Journal**: Fsynced JSONL segment WAL (SHA-256 tamper-evident chain) recording every outbound request, inbound ack, and exchange fill for regulatory compliance.
+  5. **Headless TOTP Auth**: Automated daily broker session renewal.
+* **Idea Inheritance**:
+  - **StockSharp**: Algorithmic order slicers (TWAP, VWAP, Iceberg) and multi-broker routing.
+  - **NautilusTrader**: Low-latency execution gateway and audit trails.
+
+---
+
+## 2. Coding Guidelines (DDD & TDD)
+* **Interface-First**: Broker gateways implement `BrokerExecutor` trait; slicers implement `OrderSlicer` trait.
+* **Zero Floats Policy**: Strict decimal arithmetic via `rust_decimal::Decimal`.
+* **TDD & Parallel Test Directory Rule (MANDATORY)**:
+  - All tests must live in `tests/` parallel to `src/`, or in a `src/tests/` module directory.
+  - **STRICTLY FORBIDDEN**: In-file `#[test]` inside production `src/` files.
+
+---
+
+## 3. Development & CI Workflow
+* **Linting & Formatting**:
+  ```bash
+  cargo fmt --check
+  cargo clippy --all-targets -- -D warnings
+  ```
+* **Testing**:
+  ```bash
+  cargo test --all
+  ```

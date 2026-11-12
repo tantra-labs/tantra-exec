@@ -1,0 +1,20 @@
+[package]
+name = "tantra-exec-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OTR-aware smart order router: mandatory tantra_risk::RiskEngine pre-trade gating, health circuit breakers, cost-optimized ranking, and transparent transport-level failover"
+
+[dependencies]
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+tantra-core.workspace = true
+tantra-exec-core.workspace = true
+tantra-risk.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true

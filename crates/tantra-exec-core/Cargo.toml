@@ -1,0 +1,28 @@
+[package]
+name = "tantra-exec-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Canonical broker execution interfaces: BrokerExecutor trait v2, ExecutionStream, exact-decimal wire helpers, and the prioritized token-bucket rate limiter"
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+prometheus.workspace = true
+rust_decimal.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+tantra-core.workspace = true
+tantra-risk.workspace = true
+once_cell.workspace = true
+opentelemetry.workspace = true
+tracing-opentelemetry.workspace = true
+
+[dev-dependencies]
+# Paused-time scheduler tests (tokio::time::advance).
+tokio = { workspace = true, features = ["test-util"] }

@@ -1,10 +1,10 @@
-# HANDOFF — vyapaar-exec
+# HANDOFF — tantra-exec
 
-**Status**: Migration complete for 7/8 crates; `vyapaar-exec-angelone` is a
+**Status**: Migration complete for 7/8 crates; `tantra-exec-angelone` is a
 scaffold stub (gap 0001, plan 0002 Phase 1). Audit storage gap 0002 **closed**
 (JSONL journal canonical; runtime's `SqliteAuditLedger` complementary).
 Execution-composition seam hardened for the runtime consumer.
-**Date**: 2026-11-12 · Repo: `vyapaar-exec` · Branch: `main`
+**Date**: 2026-11-12 · Repo: `tantra-exec` · Branch: `main`
 
 ## Phase / Slice Status (current batch — exec/runtime seam + gap 0002)
 
@@ -22,7 +22,7 @@ Execution-composition seam hardened for the runtime consumer.
 
 ## Decisions & Discoveries
 
-- `vyapaar-exec-angelone/src/lib.rs` is a **placeholder only** — Milestone 3 is
+- `tantra-exec-angelone/src/lib.rs` is a **placeholder only** — Milestone 3 is
   partial (zerodha + upstox ported; angelone stub) → gap 0001.
 - Audit journal is a **fsynced JSONL segment WAL**; the runtime owns the
   operational SQLite audit store (`SqliteAuditLedger`) — complementary roles,
@@ -36,7 +36,7 @@ Execution-composition seam hardened for the runtime consumer.
 - Plan 0002 Phase 1: implement the Angel One adapter surface (gap 0001) with
   parallel `tests/`; re-run the verification suite (`code-migration-map.md`)
   on close-out.
-- Cross-repo doc cleanup: `vyapaar-docs` still describes exec's journal as
+- Cross-repo doc cleanup: `tantra-docs` still describes exec's journal as
   "SQLite WAL" (architecture/adapter_interface/overview/event_loop/tradebook).
 
 ## Operating Invariants

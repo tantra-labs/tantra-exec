@@ -1,6 +1,6 @@
-# `vyapaar-exec-slicer` — Order Slicing Engine Reference
+# `tantra-exec-slicer` — Order Slicing Engine Reference
 
-Documents `crates/vyapaar-exec-slicer/src/`: SEBI scrip-freeze-limit slicing and
+Documents `crates/tantra-exec-slicer/src/`: SEBI scrip-freeze-limit slicing and
 execution algorithms. Every quantity path is exact integer/`Decimal` arithmetic
 — no floating point, ever.
 

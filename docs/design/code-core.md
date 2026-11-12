@@ -1,6 +1,6 @@
-# `vyapaar-exec-core` — Canonical Execution Ports & Machinery
+# `tantra-exec-core` — Canonical Execution Ports & Machinery
 
-Documents `crates/vyapaar-exec-core/src/`: the unified broker execution
+Documents `crates/tantra-exec-core/src/`: the unified broker execution
 interface, push-stream contract, canonical Indian product taxonomy, exact wire
 helpers, table-driven wire-token mapping, error taxonomy, and telemetry.
 
@@ -18,10 +18,10 @@ helpers, table-driven wire-token mapping, error taxonomy, and telemetry.
 | `error.rs` | `BrokerError` taxonomy (incl. boxed `RiskRefusal`) |
 | `telemetry.rs` | Prometheus broker metrics + OTel `TraceContext` helpers |
 
-The crate re-exports the canonical domain types from `vyapaar-core`
+The crate re-exports the canonical domain types from `tantra-core`
 (`OrderRequest`, `OrderAck`, `OrderStatus`, `FillReport`, `Price`, `Quantity`,
 `Money`, `InstrumentId`, `OrderSide`, `OrderType`, `TimeInForce`, `Exchange`,
-`PriceBand`) and `vyapaar_risk` (`RiskEngine`, `RiskRefusal`).
+`PriceBand`) and `tantra_risk` (`RiskEngine`, `RiskRefusal`).
 
 ## `BrokerExecutor` Trait (v2)
 
@@ -57,7 +57,7 @@ before any order touches the broker network:
 ```rust
 pub struct RiskGatedExecutor<E: BrokerExecutor> {
     inner: E,
-    risk_engine: Arc<Mutex<vyapaar_risk::RiskEngine>>,
+    risk_engine: Arc<Mutex<tantra_risk::RiskEngine>>,
 }
 ```
 
@@ -137,7 +137,7 @@ adapter filling price/trigger payloads via `OrderTypeKind::into_order_type`.
 
 ## `BrokerError` Taxonomy
 
-`Auth`, `Rejected`, `RiskRefusal(Box<vyapaar_risk::RiskRefusal>)`,
+`Auth`, `Rejected`, `RiskRefusal(Box<tantra_risk::RiskRefusal>)`,
 `Transport`, `Timeout`, `OrderNotFound`, `InvalidRequest`, `RateLimited` —
 with `From<RiskRefusal>`.
 
@@ -154,4 +154,4 @@ helpers.
 * `code-ratelimit.md` — `RateLimitedBroker` wraps any executor with a token bucket.
 * `code-router.md` — `ResilientRouter` wraps registry executors (optionally in `RiskGatedExecutor`).
 * `code-adapters.md` — Zerodha/Upstox/Angel One adapters implement these ports.
-* `vyapaar_risk::RiskEngine` — pre-trade gate (in `vyapaar-risk`).
+* `tantra_risk::RiskEngine` — pre-trade gate (in `tantra-risk`).

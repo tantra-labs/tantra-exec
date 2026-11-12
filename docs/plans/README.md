@@ -1,4 +1,4 @@
-# Plans Index — `vyapaar-exec`
+# Plans Index — `tantra-exec`
 
 Per workspace rule `.agents/rules/gap-tracking.md`:
 - **Gaps** are individual features (`docs/gaps/XXXX-*.md`).
@@ -11,10 +11,10 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 | # | Title | Target Scope | Status |
 |---|-------|--------------|--------|
-| 0002 | Milestone 3 Adapter Completion (Angel One adapter, audit storage reconciliation) | `vyapaar-exec-angelone`, `vyapaar-exec-audit` | In progress — Phase 1 (gap 0001) open, Phase 2 (gap 0002) closed |
+| 0002 | Milestone 3 Adapter Completion (Angel One adapter, audit storage reconciliation) | `tantra-exec-angelone`, `tantra-exec-audit` | In progress — Phase 1 (gap 0001) open, Phase 2 (gap 0002) closed |
 
 ## Implemented Plans
 
 | # | Title | Target Scope | Implemented In |
 |---|-------|--------------|----------------|
-| 0001 | Crypto Execution Adapters & Broker Wire-Format Mapping Verification | `vyapaar-exec-core`, `vyapaar-exec-zerodha`, `vyapaar-exec-upstox` | Phase 1 wire-mapping verified in `2675c07`; Phase 2 crypto resolved NO-GO in `d529bc9` |
+| 0001 | Crypto Execution Adapters & Broker Wire-Format Mapping Verification | `tantra-exec-core`, `tantra-exec-zerodha`, `tantra-exec-upstox` | Phase 1 wire-mapping verified in `2675c07`; Phase 2 crypto resolved NO-GO in `d529bc9` |

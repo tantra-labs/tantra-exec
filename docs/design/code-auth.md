@@ -1,6 +1,6 @@
-# `vyapaar-exec-auth` — Headless Authentication Reference
+# `tantra-exec-auth` — Headless Authentication Reference
 
-Documents `crates/vyapaar-exec-auth/src/`: headless authentication for the
+Documents `crates/tantra-exec-auth/src/`: headless authentication for the
 execution subsystem — RFC 6238 TOTP, credential management, automated broker
 session login, token caching with 08:30 IST pre-market refresh, and CDSL eDIS
 pre-authorization.

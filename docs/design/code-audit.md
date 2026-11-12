@@ -1,7 +1,7 @@
-# `vyapaar-exec-audit` — Hash-Chained Audit Journal Reference
+# `tantra-exec-audit` — Hash-Chained Audit Journal Reference
 
-Documents `crates/vyapaar-exec-audit/src/`: the tamper-evident regulatory audit
-journal and SEBI Annexure exporter, plus the `vyapaar-audit-export` CLI.
+Documents `crates/tantra-exec-audit/src/`: the tamper-evident regulatory audit
+journal and SEBI Annexure exporter, plus the `tantra-audit-export` CLI.
 
 ## Module Map
 
@@ -12,7 +12,7 @@ journal and SEBI Annexure exporter, plus the `vyapaar-audit-export` CLI.
 | `journal.rs` | Fsynced append-only JSONL segment WAL + Parquet compaction + tamper-evidence verification |
 | `system_info.rs` | Best-effort capture-host identity (IP/MAC/hostname) |
 | `exporter.rs` | Fixed-column SEBI Annexure CSV rendering |
-| `main.rs` | `vyapaar-audit-export` CLI (verify → export → optional Parquet compaction) |
+| `main.rs` | `tantra-audit-export` CLI (verify → export → optional Parquet compaction) |
 
 ## Storage: fsynced JSONL segment WAL
 
@@ -23,11 +23,11 @@ journal and SEBI Annexure exporter, plus the `vyapaar-audit-export` CLI.
 > fsync-per-entry durability with a human-inspectable replay format.
 >
 > **Resolution (gap `0002` closed)**: the JSONL segment WAL is canonical in
-> `vyapaar-exec` (tamper-evident file journal + SEBI Annexure export). The
-> runtime's `SqliteAuditLedger` (`vyapaar-runtime-persistence`) remains the
+> `tantra-exec` (tamper-evident file journal + SEBI Annexure export). The
+> runtime's `SqliteAuditLedger` (`tantra-runtime-persistence`) remains the
 > complementary **operational** SQLite store written by the live
 > `ExecutionActor` for day-to-day queries. No published reference now claims
-> `vyapaar-exec` uses a SQLite WAL journal.
+> `tantra-exec` uses a SQLite WAL journal.
 
 Each journal is a directory of append-only JSONL segments named
 `wal-{first_seq:010}.jsonl`, rotated every `SEGMENT_ROTATION` (10,000) entries.
@@ -40,7 +40,7 @@ Every `append`:
 so a kill -9 or host crash may drop the in-flight record at worst, never yield
 a torn or un-chained entry. Segments are replayed in file-name order on reopen
 to restore sequence + chain-head continuity. Compaction writes a real Apache
-Parquet snapshot (arrow 53 flat column layout), mirroring the vyapaar-market
+Parquet snapshot (arrow 53 flat column layout), mirroring the tantra-market
 tick-lakehouse idiom.
 
 `append` captures time from an **injected** `DateTime<Utc>` (the caller owns
@@ -55,7 +55,7 @@ H_n = SHA-256(H_{n-1} | Timestamp | ClientOrdId | Payload)
 The `|` separator is the plan's `‖` concat realized as an unambiguous framing:
 each field is escaped (`\` → `\\`, `|` → `\|`) before joining, so the digest
 input is injective. The chain root is `genesis()` = SHA-256 of the fixed ASCII
-seed `"vyapaar-audit-genesis-v1"`, so the first entry can never pretend
+seed `"tantra-audit-genesis-v1"`, so the first entry can never pretend
 continuity.
 
 | Type / fn | Purpose |
@@ -94,7 +94,7 @@ compliance evidence.
 
 ## CLI (`main.rs`)
 
-`vyapaar-audit-export <journal_dir> [--parquet OUT] [--format csv|jsonl]`
+`tantra-audit-export <journal_dir> [--parquet OUT] [--format csv|jsonl]`
 opens the journal, verifies the chain, prints the verification line, optionally
 compacts a Parquet snapshot, then emits the SEBI Annexure CSV (default) or raw
 JSONL replay.
