@@ -10,7 +10,7 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 | # | Title | Scope | Status |
 |---|-------|-------|--------|
-| — | *(none)* | — | — |
+| [0003](0003-bracket-order-slt-sl-execution.md) | No bracket-order (SL/target/trailing-stop) execution contract — EE+ needs `submit_bracket`/`modify_stop` | `tantra-exec-core`, `BrokerExecutor` adapters | Open — tracked by root plan 0005 |
 
 ## Closed Gaps
 
