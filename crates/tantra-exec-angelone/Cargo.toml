@@ -3,8 +3,23 @@ name = "tantra-exec-angelone"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Angel One SmartAPI 2.0 execution adapter: exact-decimal REST order placement, order book / positions / margins decoders, and the SmartStream order-update feed"
 
 [dependencies]
-tantra-core = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
+async-trait.workspace = true
+chrono.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+tantra-core.workspace = true
+tantra-exec-core.workspace = true
+tantra-exec-auth.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
