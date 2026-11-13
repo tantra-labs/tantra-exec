@@ -9,12 +9,11 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 ## Active Plans
 
-| # | Title | Target Scope | Status |
-|---|-------|--------------|--------|
-| 0002 | Milestone 3 Adapter Completion (Angel One adapter, audit storage reconciliation) | `tantra-exec-angelone`, `tantra-exec-audit` | In progress — Phase 1 (gap 0001) open, Phase 2 (gap 0002) closed |
+*(None — plan 0002 fully implemented 2026-11-13.)*
 
 ## Implemented Plans
 
 | # | Title | Target Scope | Implemented In |
 |---|-------|--------------|----------------|
 | 0001 | Crypto Execution Adapters & Broker Wire-Format Mapping Verification | `tantra-exec-core`, `tantra-exec-zerodha`, `tantra-exec-upstox` | Phase 1 wire-mapping verified in `2675c07`; Phase 2 crypto resolved NO-GO in `d529bc9` |
+| 0002 | Milestone 3 Adapter Completion (Angel One adapter, audit storage reconciliation) | `tantra-exec-angelone`, `tantra-exec-audit` | Phase 2 (gap 0002) closed earlier; Phase 1 (gap 0001, Angel One SmartAPI 2.0 adapter) + Phase 3 (verification + indexes) landed `2026-11-13` (`2258bbb`). All 3 phases complete. |
