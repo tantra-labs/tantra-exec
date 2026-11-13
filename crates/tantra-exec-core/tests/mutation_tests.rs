@@ -9,9 +9,9 @@
 
 use rust_decimal::Decimal;
 use std::time::Duration;
-use tokio::time::sleep;
 use tantra_exec_core::BrokerError;
 use tantra_exec_core::ratelimit::{RateLimiterConfig, RequestPriority, TokenBucketRateLimiter};
+use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_mutation_kill_refill_timestamp_delta_and_fractional_precision() {

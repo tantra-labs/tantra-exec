@@ -1,0 +1,18 @@
+[package]
+name = "tantra-exec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Facade of the tantra-exec bounded context (Hand): re-exports the member crates"
+
+[dependencies]
+tantra-exec-core = { workspace = true }
+tantra-exec-auth = { workspace = true }
+tantra-exec-router = { workspace = true }
+tantra-exec-slicer = { workspace = true }
+tantra-exec-audit = { workspace = true }
+tantra-exec-zerodha = { workspace = true }
+tantra-exec-upstox = { workspace = true }
+tantra-exec-angelone = { workspace = true }

@@ -29,9 +29,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use tantra_core::{OrderAck, OrderRequest, OrderStatus, Price, Quantity};
 use tokio::sync::{Mutex, Notify};
 use tracing::warn;
-use tantra_core::{OrderAck, OrderRequest, OrderStatus, Price, Quantity};
 
 use crate::error::BrokerError;
 use crate::executor::BrokerExecutor;

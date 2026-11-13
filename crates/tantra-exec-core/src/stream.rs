@@ -7,8 +7,8 @@
 //! [`BrokerExecutionEvent`] taxonomy shared by all broker transport adapters.
 
 use async_trait::async_trait;
-use tokio::sync::mpsc;
 use tantra_core::OrderAck;
+use tokio::sync::mpsc;
 
 use crate::error::BrokerError;
 

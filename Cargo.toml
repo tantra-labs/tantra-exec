@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/tantra-exec",
   "crates/tantra-exec-core",
   "crates/tantra-exec-auth",
   "crates/tantra-exec-router",
@@ -24,6 +25,7 @@ tantra-core = { path = "../tantra-core" }
 tantra-risk = { path = "../tantra-risk" }
 
 # Internal bounded-context crates (execution gateway).
+tantra-exec = { path = "crates/tantra-exec" }
 tantra-exec-core = { path = "crates/tantra-exec-core" }
 tantra-exec-auth = { path = "crates/tantra-exec-auth" }
 tantra-exec-slicer = { path = "crates/tantra-exec-slicer" }
