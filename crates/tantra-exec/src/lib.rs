@@ -8,6 +8,7 @@ pub use tantra_exec_angelone as angelone;
 pub use tantra_exec_audit as audit;
 pub use tantra_exec_auth as auth;
 pub use tantra_exec_core as core;
+pub use tantra_exec_paper as paper;
 pub use tantra_exec_router as router;
 pub use tantra_exec_slicer as slicer;
 pub use tantra_exec_upstox as upstox;

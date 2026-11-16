@@ -14,7 +14,12 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+# WASM-safe tokio (E8): only sync/macros/io-util/rt/time are supported on
+# wasm32-unknown-unknown. The workspace `tokio` enables `net`+`rt-multi-thread`
+# for broker adapters; tantra-exec-core needs none of those, so a direct,
+# trimmed dependency keeps `tantra-exec-paper` wasm-targetable while feature
+# unification restores the full set for native workspace builds.
+tokio = { version = "1", default-features = false, features = ["rt", "sync", "time", "io-util", "macros"] }
 tracing.workspace = true
 uuid.workspace = true
 tantra-core.workspace = true

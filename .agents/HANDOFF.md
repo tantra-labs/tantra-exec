@@ -1,58 +1,85 @@
 # HANDOFF — tantra-exec
 
-**Status**: All 8 crates migrated and green. `tantra-exec-angelone` SmartAPI
-2.0 adapter implemented (gap 0001 closed, plan 0002 Phase 1 done). Audit
-storage gap 0002 closed (JSONL journal canonical; runtime's
-`SqliteAuditLedger` complementary).
-**Date**: 2026-11-13 · Repo: `tantra-exec` · Branch: `main`
+**Status**: 9 crates green. `tantra-exec-paper` (plan 0003) P0 implemented —
+E1–E8 verified + T14.4 sync port lift (18 paper tests + 40 core tests,
+`wasm32-unknown-unknown` check passes, clippy `-D warnings` clean). Angel One
+adapter (gap 0001, plan 0002) remains closed/complete from the prior batch.
+**Date**: 2026-11-16 · Repo: `tantra-exec` · Branch: `main`
 
-## Phase / Slice Status (current batch — Angel One adapter, plan 0002 complete)
+## Latest Batch — T14 Wave 2 (sync port lift)
 
-- `tantra-exec-angelone` implemented (`feat(angelone): SmartAPI 2.0
-  BrokerExecutor adapter with order stream and exact-decimal wire payloads`,
-  `2258bbb`): REST executor (place/modify/cancel, order book, positions with
-  signed-quantity → Long/Short/Flat, margins via RMS, health via profile,
-  `get_order_status`), SmartStream order feed → `ExecutionStream`
-  (`AngelOneOrderStream`, delta-tracked fills), `BrokerEnumMap` wire tables in
-  `src/mapping.rs`, `map_angelone_error`, `rate_limited()` (10/s preset),
-  `SessionTokens` expiry wiring (`feed_token`, 03:30 IST roll-off via
-  `next_ist_run`). Cargo.toml mirrors upstox + `tantra-exec-auth`.
-- Tests: `tests/{wire_mapping,angelone_payload,angelone_rest,angelone_ws}_tests.rs`
-  + smoke `integration_tests.rs` — **40 angelone tests** green.
-- Verification (from repo root): `cargo fmt --check` clean; `cargo clippy
-  --workspace --all-targets --profile prod -- -D warnings` clean; `cargo test
-  --workspace --profile prod` green; `make prod` refresh.
-- Gap 0001 closed (doc removed, Closed table updated); plan 0002 fully
-  implemented and retired to the Implemented table; gap 0002 already closed
-  (prior batch).
+Date: 2026-11-16. Plan 0003 deliverable 6 / runtime gap 0008 option 2 landed:
+`SimExecutionPort` added to `tantra-exec-core` (new `src/sim.rs` + lib
+re-export, `pub mod sim` + `pub use sim::SimExecutionPort`); the sync trait
+mirrors the runtime `BrokerAdapter` shape verbatim (`submit_order(&order, now)`
+/ `cancel_order(&id, now)` / `broker_name`, `Arc<T>` blanket impl, no wall
+clock). `PaperExchangeExecutor` implements it (delegates to
+`submit_order_sync` / `cancel_order_sync`). New `tests/sim_port_tests.rs` (+2
+tests: market-buy fill + positions, cancel-once-then-error). Runtime
+`dispatch.rs::BrokerAdapter` is now a thin re-export; gap 0008 closed.
+Verification green: `cargo check --workspace --profile prod`, `cargo test
+-p tantra-exec-core -p tantra-exec-paper --profile prod`, clippy `-D warnings`,
+wasm check, `make prod`.
+
+## Latest Batch — T14 P0 IMPLEMENTED (plan 0003)
+
+Date: 2026-11-16. Plan `docs/plans/0003-paper-exchange-matching-core.md`: new crate
+`tantra-exec-paper` (pure matching engine) — ported `book` (L2 price-time priority,
+market/limit, participation cap), `latency`, `slippage`, `mis` from
+`tantra-runtime-backtest::sim` (verbatim; `OrderBook::ready_ts` made `pub` for the
+`tantra-runtime/docs/plans/0005` parity surface) + new `lifecycle`, `paper`
+(`PaperExchange` aggregate), `executor` (`PaperExchangeExecutor` implements
+`BrokerExecutor`). Wired into the workspace (member + dep + facade re-export) and
+`rust_decimal_macros` added to workspace deps. E-slices E1–E8 green.
+
+## Phase / Slice Status (current batch — plan 0003 P0)
+
+- `tantra-exec-paper` (E1–E8): price-time priority across resting participants;
+  multi-level VWAP; IOC remainder cancel; GTD expiry (`submit_order_gtd` +
+  `advance_to`); stop trigger (StopLoss→Market / StopLimit→Limit); cancel+amend;
+  determinism golden replay (identical tape → byte-identical fills/events); wasm.
+- Tests: `tests/{book_tests,paper_exchange_tests,executor_tests,sim_port_tests}.rs` — **18 tests
+  green** (`cargo test -p tantra-exec-paper --profile prod`).
+- Verification: `cargo check --workspace --profile prod`; `cargo clippy
+  --all-targets -- -D warnings` (clean, incl. all other members); `cargo check
+  -p tantra-exec-paper --target wasm32-unknown-unknown --profile prod` (E8);
+  `make prod` refresh.
+- Plan 0003 remains Active (E9 cross-repo parity pending); index row updated to
+  "P0 implemented".
 
 ## Decisions & Discoveries
 
-- `PositionSide` (with `Flat`) lives in `tantra_exec_core::types` (root
-  re-export), NOT `tantra_core::PositionSide` (older, no `Flat`). Zero-quantity
-  positions map to `Flat`.
-- Rate limiting is in `tantra_exec_core::ratelimit` (root re-exports
-  `BrokerRateCatalog`, `RateLimitedBroker`); `BrokerRateCatalog::for_broker("angelone")`
-  = 10/s preset; `RateLimitedBroker::with_config(inner, config)` wrapper.
-- `wire::*` decode helpers take `&serde_json::Value` (`decimal_from_json`,
-  `price_from_json`, `quantity_from_json`, `integer_from_json`,
-  `parse_broker_ist_datetime`, `parse_ist_time_of_day`, `ist_today`).
-- Audit journal is a **fsynced JSONL segment WAL**; the runtime owns the
-  operational SQLite audit store (`SqliteAuditLedger`) — complementary roles.
-- `RiskGatedExecutor` trait `cancel_order` delegates without OTR recording
-  (trait surface carries no `algo_id`); use the inherent
-  `cancel_order(order_id, algo_id)` when OTR recording is required.
+- **WASM E8 required dependency surgery**: tokio supports only
+  `sync,macros,io-util,rt,time` on `wasm32-unknown-unknown`, and `uuid` v4 /
+  `rand_core`/`ahash` need `getrandom` `wasm_js`/`js` backends. `tantra-exec-core`
+  now declares a direct trimmed tokio (workspace `tokio` keeps `net`/
+  `rt-multi-thread` for the broker adapters; native builds unify features back);
+  `tantra-exec-paper` adds wasm-target `getrandom` features.
+- **Paper matching**: resting participants match directly (not via feed book);
+  aggressor gets price improvement (fills at the resting price); partial-fill
+  market orders rest at no price and re-match only against feed depth (degenerate
+  for P0, untested).
+- **Cash is aggregate per `AccountId`**: a matched buy+sell pair nets to zero
+  cash (buy pays `notional+fee`, sell receives `notional-fee`) — documented in
+  `cash_and_positions_accounting_on_cross`.
+- `WorkingOrder` carries an extra `submitted_ts` field (spec shape +1) so
+  `fetch_order_book` snapshots are deterministic (no `Utc::now()` in the paper
+  path). `FillReport.algo_id` = `"paper"` (WorkingOrder does not store the request
+  `algo_id`). E3 interpreted as resting contra *Sell* 150@100 + IOC Buy 200
+  (the spec text's same-side "Buy 150@100" cannot fill a buy).
+- Executor `BrokerExecutor` impl uses `std::sync::Mutex` (wasm-safe), not tokio's.
 
 ## Immediate Next Step
 
-- Cross-repo doc cleanup: `tantra-docs` still describes exec's journal as
-  "SQLite WAL" (architecture/adapter_interface/overview/event_loop/tradebook).
-- `tantra-adapters` plan 0003 (cross-repo integration) will wire the Python
-  adapters ↔ exec/ledger once approved.
+- E9: `test_identical_fills_paper_vs_backtest` parity gate once
+  `tantra-runtime/docs/plans/0005` re-wires the runtime to this crate.
 
 ## Operating Invariants
 
-- Canonical profile `prod`: `cargo build/check/test --profile prod`.
+- Canonical profile `prod`: `cargo build/check/test --profile prod`; `make prod`.
 - Tests live in `tests/` parallel to `src/`; no in-file `#[test]` blocks.
-- Zero floats in financial paths; `rust_decimal::Decimal` only.
-- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --profile prod` green.
+- Zero floats in financial paths; `rust_decimal::Decimal` only; no wall clock in
+  the `PaperExchange` (all transitions take explicit `DateTime<Utc>`; the
+  executor's `BrokerExecutor` wire port may read `Utc::now()`).
+- WASM: `tantra-exec-paper` has no `tokio`/`std::fs`/OS threads in `[dependencies]`;
+  keep tokio features on the wasm-safe set.

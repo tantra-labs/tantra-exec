@@ -1,0 +1,40 @@
+[package]
+name = "tantra-exec-paper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Paper trading exchange matching engine: deterministic L2 order book, order lifecycle, account, and event stream (P0 of docs/plans/0003)"
+
+[lib]
+name = "tantra_exec_paper"
+
+[dependencies]
+# Canonical tantra-labs shared kernel + risk gate (Decimal-only domain types).
+tantra-core.workspace = true
+tantra-exec-core.workspace = true
+tantra-risk.workspace = true
+# Exact decimal arithmetic; `rust_decimal_macros` supplies the `dec!` literal
+# macro used by the ported slippage model.
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
+
+# WASM (E8) support: `wasm32-unknown-unknown` requires the `wasm_js`/`js`
+# RNG backends for the getrandom crates pulled in transitively by `uuid`
+# (v4) and `rand_core 0.6`/`ahash` (via `tantra-exec-core`). Feature
+# unification enables them for the whole check graph; there is no effect on
+# native targets.
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+getrandom-02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+# Runtime only for the async executor tests; the crate's own lib is
+# tokio-free and WASM-targetable (E8).
+tokio = { workspace = true }

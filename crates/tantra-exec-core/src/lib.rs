@@ -19,6 +19,7 @@ pub mod decimal;
 pub mod error;
 pub mod executor;
 pub mod ratelimit;
+pub mod sim;
 pub mod stream;
 pub mod telemetry;
 pub mod types;
@@ -35,6 +36,7 @@ pub use ratelimit::{
     BrokerRateCatalog, RateLimitedBroker, RateLimiterConfig, RequestPriority,
     TokenBucketRateLimiter,
 };
+pub use sim::SimExecutionPort;
 pub use stream::{
     BrokerExecutionEvent, ChannelExecutionStream, ExecutionEventSink, ExecutionStream,
 };

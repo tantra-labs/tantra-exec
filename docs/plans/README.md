@@ -9,7 +9,9 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 ## Active Plans
 
-*(None — plan 0002 fully implemented 2026-11-13.)*
+| # | Title | Target Scope | Status |
+|---|-------|--------------|--------|
+| [0003](0003-paper-exchange-matching-core.md) | Paper Exchange Matching Core — promote the backtest L2 book into `tantra-exec-paper`: price-time priority, order lifecycle (partial/stop/IOC/GTD), account isolation, `PaperExchangeExecutor` on `BrokerExecutor` + lifted sync port (closes runtime gap 0008 option 2) | new `tantra-exec-paper` crate + `tantra-exec-core` | **P0 implemented (`2026-11-16`)**: E1–E8 green (18 tests), E8 wasm check passes; T14.4 Wave 2 lifted the sync port (`SimExecutionPort`) into `tantra-exec-core` and closed runtime gap 0008; E9 cross-repo parity landed in `tantra-runtime-backtest/tests/paper_parity_tests.rs` (4 tests, byte-identical fills) |
 
 ## Implemented Plans
 

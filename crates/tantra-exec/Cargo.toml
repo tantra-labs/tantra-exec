@@ -16,3 +16,4 @@ tantra-exec-audit = { workspace = true }
 tantra-exec-zerodha = { workspace = true }
 tantra-exec-upstox = { workspace = true }
 tantra-exec-angelone = { workspace = true }
+tantra-exec-paper = { workspace = true }
