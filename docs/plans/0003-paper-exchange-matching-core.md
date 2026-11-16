@@ -3,6 +3,7 @@
 **Status**: P0 implemented (2026-11-16); T14.1–T14.3 + T14.4 done; Wave 2 closed runtime gap 0008 (sync port lifted).
 E1–E8 green (18 tests in `crates/tantra-exec-paper/tests/`, `wasm32-unknown-unknown` check passes).
 E9 (backtest/paper parity, cross-repo) landed in `tantra-runtime-backtest/tests/paper_parity_tests.rs` (4 tests, byte-identical fills on a golden tape).
+T14.14 (root plan 0007 P4): canonical golden vector + parity test landed in `crates/tantra-exec-paper/tests/golden/` + `tests/golden_parity_tests.rs` (byte-identical across backtest / paper / Python wheel / WASM).
 **Track**: T14 (P0) · **Phase**: 3 (execution)
 **Owning repo**: `tantra-exec` · **Master plan**: root `docs/plans/0007-*.md`
 

@@ -38,3 +38,8 @@ getrandom-02 = { package = "getrandom", version = "0.2", features = ["js"] }
 # Runtime only for the async executor tests; the crate's own lib is
 # tokio-free and WASM-targetable (E8).
 tokio = { workspace = true }
+# P4 golden vector (T14.14): the canonical parity tape is loaded from
+# `tests/golden/paper_golden.json` (include_str! + serde_json) and `dec!`
+# pins the golden decimals (`rust_decimal_macros`).
+serde_json = { workspace = true }
+rust_decimal_macros = { workspace = true }

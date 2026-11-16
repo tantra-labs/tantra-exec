@@ -44,8 +44,10 @@ market/limit, participation cap), `latency`, `slippage`, `mis` from
   --all-targets -- -D warnings` (clean, incl. all other members); `cargo check
   -p tantra-exec-paper --target wasm32-unknown-unknown --profile prod` (E8);
   `make prod` refresh.
-- Plan 0003 remains Active (E9 cross-repo parity pending); index row updated to
-  "P0 implemented".
+- Plan 0003 Implemented; E9 parity landed in
+  `tantra-runtime-backtest/tests/paper_parity_tests.rs`; T14.14 golden vector
+  + parity test landed in `crates/tantra-exec-paper/tests/golden/` +
+  `tests/golden_parity_tests.rs` (index row: "P0 implemented").
 
 ## Decisions & Discoveries
 
@@ -71,8 +73,11 @@ market/limit, participation cap), `latency`, `slippage`, `mis` from
 
 ## Immediate Next Step
 
-- E9: `test_identical_fills_paper_vs_backtest` parity gate once
-  `tantra-runtime/docs/plans/0005` re-wires the runtime to this crate.
+- Root plan 0007 P4 (T14.14): canonical golden vector landed at
+  `crates/tantra-exec-paper/tests/golden/paper_golden.json` +
+  `tests/golden_parity_tests.rs` — byte-identical fills across backtest
+  (E9), this engine, the Python wheel, and WASM. Next: paper-trading user
+  guide (T14.15, coordinated with `tantra-docs`).
 
 ## Operating Invariants
 
