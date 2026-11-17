@@ -8,8 +8,13 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use tantra_core::{FillReport, Money, OrderAck, OrderRequest, OrderStatus, Price, Quantity};
+use tantra_core::{
+    FillReport, Money, OrderAck, OrderRequest, OrderStatus, OrderType, Price, Quantity,
+};
 
+use crate::bracket::{
+    BracketCapabilities, BracketOrderSpec, BracketTicket, StopUpdate, stop_client_order_id,
+};
 use crate::decimal::quantity_to_u32_exact;
 use crate::error::BrokerError;
 use crate::types::{BrokerHealth, BrokerMargins, BrokerPosition, OrderSnapshot, ProductType};
@@ -86,6 +91,43 @@ pub trait BrokerExecutor: Send + Sync {
         Err(BrokerError::InvalidRequest(
             "modify_order is not implemented by this broker adapter".into(),
         ))
+    }
+
+    /// Submit a bracket order (entry + initial stop + target ladder).
+    ///
+    /// Brokers with native BO/CO support translate this into a single bracket
+    /// order (see [`BrokerExecutor::bracket_capabilities`]); emulated adapters
+    /// place an entry order plus resting stop and target child orders.
+    /// Adapters that don't implement brackets refuse with
+    /// [`BrokerError::InvalidRequest`].
+    async fn submit_bracket(&self, spec: BracketOrderSpec) -> Result<BracketTicket, BrokerError> {
+        let _ = spec;
+        Err(BrokerError::InvalidRequest(
+            "submit_bracket is not implemented by this broker adapter".into(),
+        ))
+    }
+
+    /// Modify the resting stop of an open bracket: trail its price and/or
+    /// resize the remaining stop quantity (partial-exit synchronization).
+    ///
+    /// Adapters that don't implement bracket stops refuse with
+    /// [`BrokerError::InvalidRequest`].
+    async fn modify_stop(
+        &self,
+        bracket_id: &str,
+        new_stop: Price,
+        new_qty: Option<Quantity>,
+    ) -> Result<StopUpdate, BrokerError> {
+        let _ = (bracket_id, new_stop, new_qty);
+        Err(BrokerError::InvalidRequest(
+            "modify_stop is not implemented by this broker adapter".into(),
+        ))
+    }
+
+    /// Per-broker bracket-order capability flags. Defaults to no bracket
+    /// support; adapters that implement the contract override this.
+    fn bracket_capabilities(&self) -> BracketCapabilities {
+        BracketCapabilities::none()
     }
 
     /// Fetch full active order book snapshot from broker.
@@ -244,6 +286,23 @@ impl<T: BrokerExecutor + ?Sized> BrokerExecutor for Arc<T> {
             .await
     }
 
+    async fn submit_bracket(&self, spec: BracketOrderSpec) -> Result<BracketTicket, BrokerError> {
+        (**self).submit_bracket(spec).await
+    }
+
+    async fn modify_stop(
+        &self,
+        bracket_id: &str,
+        new_stop: Price,
+        new_qty: Option<Quantity>,
+    ) -> Result<StopUpdate, BrokerError> {
+        (**self).modify_stop(bracket_id, new_stop, new_qty).await
+    }
+
+    fn bracket_capabilities(&self) -> BracketCapabilities {
+        (**self).bracket_capabilities()
+    }
+
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         (**self).fetch_order_book().await
     }
@@ -298,6 +357,23 @@ impl<E: BrokerExecutor> BrokerExecutor for RiskGatedExecutor<E> {
             .await
     }
 
+    async fn submit_bracket(&self, spec: BracketOrderSpec) -> Result<BracketTicket, BrokerError> {
+        self.inner.submit_bracket(spec).await
+    }
+
+    async fn modify_stop(
+        &self,
+        bracket_id: &str,
+        new_stop: Price,
+        new_qty: Option<Quantity>,
+    ) -> Result<StopUpdate, BrokerError> {
+        self.inner.modify_stop(bracket_id, new_stop, new_qty).await
+    }
+
+    fn bracket_capabilities(&self) -> BracketCapabilities {
+        self.inner.bracket_capabilities()
+    }
+
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         self.inner.fetch_order_book().await
     }
@@ -323,6 +399,16 @@ struct MockOrderState {
     filled_quantity: Quantity,
 }
 
+/// In-memory bracket state kept by [`MockBrokerExecutor`] so `modify_stop`
+/// round-trips against the ticket returned by `submit_bracket`.
+#[derive(Debug, Clone)]
+struct MockBracketState {
+    /// Broker order id of the stop child order (deterministic client order id).
+    stop_id: String,
+    /// Quantity currently covered by the resting stop.
+    stop_qty: Quantity,
+}
+
 /// Simulated default cash balance: INR 1,000,000.00
 fn simulated_cash() -> Money {
     Money::inr(Decimal::from(1_000_000u64))
@@ -340,6 +426,10 @@ pub struct MockBrokerExecutor {
     health_ok: bool,
     /// Every order submitted through this mock, in submission order.
     placed: Arc<Mutex<Vec<OrderRequest>>>,
+    /// Brackets submitted through this mock, keyed by bracket id.
+    brackets: Arc<Mutex<HashMap<String, MockBracketState>>>,
+    /// Bracket-order capability flags driving placement strategy selection.
+    bracket_caps: BracketCapabilities,
 }
 
 impl MockBrokerExecutor {
@@ -357,6 +447,8 @@ impl MockBrokerExecutor {
             })),
             health_ok: true,
             placed: Arc::new(Mutex::new(Vec::new())),
+            brackets: Arc::new(Mutex::new(HashMap::new())),
+            bracket_caps: BracketCapabilities::default(),
         }
     }
 
@@ -374,6 +466,12 @@ impl MockBrokerExecutor {
     /// Simulate a broker that refuses every order and cancellation.
     pub fn with_reject_all(mut self) -> Self {
         self.reject = true;
+        self
+    }
+
+    /// Configure the bracket-order capability flags for this mock.
+    pub fn with_bracket_capabilities(mut self, caps: BracketCapabilities) -> Self {
+        self.bracket_caps = caps;
         self
     }
 
@@ -534,5 +632,111 @@ impl BrokerExecutor for MockBrokerExecutor {
         } else {
             Err(BrokerError::OrderNotFound(order_id.to_string()))
         }
+    }
+
+    fn bracket_capabilities(&self) -> BracketCapabilities {
+        self.bracket_caps
+    }
+
+    async fn submit_bracket(&self, spec: BracketOrderSpec) -> Result<BracketTicket, BrokerError> {
+        let caps = self.bracket_caps;
+        if !caps.native_bo && !caps.emulated_multileg {
+            return Err(BrokerError::InvalidRequest(
+                "mock broker has no bracket placement strategy (native_bo=false, emulated_multileg=false)"
+                    .into(),
+            ));
+        }
+
+        // Native BO/CO: the broker holds entry + stop as a single bracket
+        // order, so the ticket's legs collapse onto the one native order.
+        if caps.native_bo {
+            let entry_qty = spec.entry.quantity;
+            self.place_order(spec.entry).await?;
+            let bracket_id = format!("MOCK-BO-{}", Uuid::new_v4().simple());
+            // Native BO: entry and stop collapse onto the single broker order.
+            let stop_id = bracket_id.clone();
+            let ticket = BracketTicket {
+                bracket_id: bracket_id.clone(),
+                entry_id: bracket_id.clone(),
+                stop_id,
+                target_ids: Vec::new(),
+            };
+            self.brackets.lock().await.insert(
+                bracket_id,
+                MockBracketState {
+                    stop_id: ticket.stop_id.clone(),
+                    stop_qty: entry_qty,
+                },
+            );
+            return Ok(ticket);
+        }
+
+        // Emulated multileg: entry + resting stop child + one order per
+        // target leg, each recorded in the mock order store.
+        let instrument = spec.entry.instrument.clone();
+        let side = spec.entry.side;
+        let algo_id = spec.entry.algo_id.clone();
+        let entry_qty = spec.entry.quantity;
+        let entry_ack = self.place_order(spec.entry).await?;
+        let stop_req = OrderRequest::with_id(
+            Uuid::new_v4(),
+            instrument.clone(),
+            side.opposite(),
+            OrderType::StopLoss(spec.initial_stop),
+            entry_qty,
+            algo_id.clone(),
+        );
+        self.place_order(stop_req).await?;
+        let bracket_id = format!("MOCK-BR-{}", Uuid::new_v4().simple());
+        let stop_id = stop_client_order_id(&bracket_id);
+        let mut target_ids = Vec::with_capacity(spec.targets.len());
+        for (i, leg) in spec.targets.iter().enumerate() {
+            let req = OrderRequest::with_id(
+                Uuid::new_v4(),
+                instrument.clone(),
+                side.opposite(),
+                OrderType::Limit(leg.price),
+                leg.qty,
+                algo_id.clone(),
+            );
+            self.place_order(req).await?;
+            target_ids.push(format!("{bracket_id}#target-{i}"));
+        }
+        let ticket = BracketTicket {
+            bracket_id: bracket_id.clone(),
+            entry_id: entry_ack.order_id,
+            stop_id: stop_id.clone(),
+            target_ids,
+        };
+        self.brackets.lock().await.insert(
+            bracket_id,
+            MockBracketState {
+                stop_id,
+                stop_qty: entry_qty,
+            },
+        );
+        Ok(ticket)
+    }
+
+    async fn modify_stop(
+        &self,
+        bracket_id: &str,
+        new_stop: Price,
+        new_qty: Option<Quantity>,
+    ) -> Result<StopUpdate, BrokerError> {
+        let mut brackets = self.brackets.lock().await;
+        let state = brackets
+            .get_mut(bracket_id)
+            .ok_or_else(|| BrokerError::OrderNotFound(bracket_id.to_string()))?;
+        if let Some(qty) = new_qty {
+            state.stop_qty = qty;
+        }
+        Ok(StopUpdate {
+            bracket_id: bracket_id.to_string(),
+            order_id: state.stop_id.clone(),
+            stop: new_stop,
+            qty: state.stop_qty,
+            ts: Utc::now(),
+        })
     }
 }

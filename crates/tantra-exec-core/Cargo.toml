@@ -31,3 +31,5 @@ tracing-opentelemetry.workspace = true
 [dev-dependencies]
 # Paused-time scheduler tests (tokio::time::advance).
 tokio = { workspace = true, features = ["test-util"] }
+# Property tests for the bracket tracker invariants.
+proptest.workspace = true

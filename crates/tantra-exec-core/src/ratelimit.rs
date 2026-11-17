@@ -33,6 +33,7 @@ use tantra_core::{OrderAck, OrderRequest, OrderStatus, Price, Quantity};
 use tokio::sync::{Mutex, Notify};
 use tracing::warn;
 
+use crate::bracket::{BracketCapabilities, BracketOrderSpec, BracketTicket, StopUpdate};
 use crate::error::BrokerError;
 use crate::executor::BrokerExecutor;
 use crate::types::{BrokerHealth, BrokerMargins, BrokerPosition, OrderSnapshot};
@@ -637,6 +638,25 @@ impl<E: BrokerExecutor> BrokerExecutor for RateLimitedBroker<E> {
         self.inner
             .modify_order(order_id, new_price, new_quantity)
             .await
+    }
+
+    async fn submit_bracket(&self, spec: BracketOrderSpec) -> Result<BracketTicket, BrokerError> {
+        self.budget_for(RequestPriority::Normal).await?;
+        self.inner.submit_bracket(spec).await
+    }
+
+    async fn modify_stop(
+        &self,
+        bracket_id: &str,
+        new_stop: Price,
+        new_qty: Option<Quantity>,
+    ) -> Result<StopUpdate, BrokerError> {
+        self.budget_for(RequestPriority::Normal).await?;
+        self.inner.modify_stop(bracket_id, new_stop, new_qty).await
+    }
+
+    fn bracket_capabilities(&self) -> BracketCapabilities {
+        self.inner.bracket_capabilities()
     }
 
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {

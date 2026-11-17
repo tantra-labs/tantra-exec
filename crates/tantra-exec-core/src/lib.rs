@@ -7,6 +7,7 @@
 //! adapter from HTTP 429 bans.
 //!
 //! # Module map
+//! - [`bracket`] — bracket-order (SL / multi-target / trailing-stop) contract & tracker
 //! - [`types`] — [`ProductType`], broker health, order snapshots, positions, margins
 //! - [`executor`] — [`BrokerExecutor`] trait v2, [`RiskGatedExecutor`], mock adapter
 //! - [`stream`] — [`ExecutionStream`] push trait + channel transport
@@ -15,6 +16,7 @@
 //! - [`decimal`] — exact decimal wire formatting (no floats, ever)
 //! - [`error`] — [`BrokerError`] taxonomy
 
+pub mod bracket;
 pub mod decimal;
 pub mod error;
 pub mod executor;
@@ -26,6 +28,10 @@ pub mod types;
 pub mod wire;
 pub mod wiring;
 
+pub use bracket::{
+    BracketCapabilities, BracketError, BracketEvent, BracketOrderSpec, BracketTicket,
+    BracketTracker, FillRecord, StopUpdate, stop_client_order_id,
+};
 pub use decimal::{format_fixed_exact, quantity_to_u32_exact};
 pub use error::BrokerError;
 pub use executor::{
