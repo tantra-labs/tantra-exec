@@ -10,7 +10,15 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 | # | Title | Scope | Status |
 |---|-------|-------|--------|
-| _(none)_ | — | — | — |
+| [0004](0004-idempotent-submit-and-outcome-unknown.md) | `client_order_id` never reaches the broker; no idempotent submit or unknown-outcome handling | critical — design review 2026-11 | open |
+| [0005](0005-durable-order-id-map-and-reconcile.md) | Broker-order-id map in memory only; no reconcile on reconnect | high — design review 2026-11 | open |
+| [0006](0006-slicer-durable-state-and-clock.md) | TWAP slicer has no durable parent state and reads the wall clock | high — design review 2026-11 | open |
+| [0007](0007-secret-types-redaction-zeroize.md) | Secret types derive `Debug`/`Serialize`, lack `Zeroize` | high — design review 2026-11 | open |
+| [0008](0008-session-token-lifecycle.md) | Executors hold a static access token; no refresh or daily expiry handling | high — design review 2026-11 | open |
+| [0009](0009-audit-wal-integrity.md) | Audit WAL hash does not bind order fields; torn tail blocks reopen; not wired into runtime | high — design review 2026-11 | open |
+| [0010](0010-rate-limiter-design.md) | Rate limiter: one bucket per broker, per process, hard-wired clock | medium — design review 2026-11 | open |
+| [0011](0011-order-normalisation-tick-lot-validity.md) | Order mapping: no tick/lot rounding, GTC mis-mapped, algo id unvalidated | medium — design review 2026-11 | open |
+| [0012](0012-credential-sourcing-and-legacy-env.md) | Credential store: legacy `HONBA_*` env, no vault/file backend, in-memory sessions | medium — design review 2026-11 | open |
 
 ## Closed Gaps
 

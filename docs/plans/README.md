@@ -11,7 +11,7 @@ Per workspace rule `.agents/rules/gap-tracking.md`:
 
 | # | Title | Target Scope | Status |
 |---|-------|--------------|--------|
-| _(none)_ | — | — | — |
+| [0004](0004-design-review-2026-11.md) | tantra-exec design review (2026-11): idempotent submission, durable order state, secrets & audit integrity (gaps 0004–0012, R1–R6) | `tantra-exec-*` | Proposed |
 
 ## Implemented Plans
 
