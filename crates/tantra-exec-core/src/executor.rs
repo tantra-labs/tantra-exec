@@ -26,8 +26,8 @@ pub fn validate_native_legs(
     display_quantity: Quantity,
 ) -> Result<u32, BrokerError> {
     use rust_decimal::prelude::ToPrimitive;
-    let parent = quantity_to_u32_exact(parent_quantity.0)? as u64;
-    let display = quantity_to_u32_exact(display_quantity.0)? as u64;
+    let parent = quantity_to_u32_exact(parent_quantity.value())? as u64;
+    let display = quantity_to_u32_exact(display_quantity.value())? as u64;
     if display == 0 || display >= parent {
         return Err(BrokerError::InvalidRequest(format!(
             "iceberg display quantity {display} must be non-zero and smaller than parent {parent}"

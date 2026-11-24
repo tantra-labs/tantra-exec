@@ -21,7 +21,7 @@ async fn smart_order_router_flow() {
     router.register_broker(mock, true);
 
     let now = Utc::now();
-    let inst = InstrumentId::new(Exchange::Nse, "INFY");
+    let inst = InstrumentId::try_new(Exchange::Nse, "INFY").unwrap();
     let req = OrderRequest::new(
         inst.clone(),
         OrderSide::Buy,
@@ -52,7 +52,7 @@ async fn unregistered_algo_is_refused_before_dispatch() {
     router.register_broker(mock, true);
 
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "TATAMOTORS"),
+        InstrumentId::try_new(Exchange::Nse, "TATAMOTORS").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
         Quantity::from_u64(5),
@@ -72,7 +72,7 @@ fn exec_router_notional_mathematics_are_exact() {
     let mut router = ExecRouterAlias::new(50);
     let p = rust_decimal::Decimal::from_str_exact("2914.85").unwrap();
     assert_eq!(
-        router.notional_exact(Price::new(p), Quantity::from_u64(7)),
+        router.notional_exact(Price::try_new(p).unwrap(), Quantity::from_u64(7)),
         p * rust_decimal::Decimal::from(7)
     );
     // OTR budget: 50 accepted, then refused

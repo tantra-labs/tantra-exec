@@ -25,8 +25,8 @@ fn parent_within_freeze_passes_through_as_single_child() {
     let slicer = FreezeLimitSlicer::new(Arc::new(indexed_catalog()));
     let plan = slicer.plan(&parent_request(1800)).unwrap();
     assert_eq!(plan.legs.len(), 1, "waiting parent fits exactly one leg");
-    assert_eq!(plan.legs[0].quantity.0.to_string(), "1800");
-    assert_eq!(plan.total_quantity().0.to_string(), "1800");
+    assert_eq!(plan.legs[0].quantity.value().to_string(), "1800");
+    assert_eq!(plan.total_quantity().value().to_string(), "1800");
 }
 
 #[test]
@@ -34,29 +34,35 @@ fn greedy_chunks_match_ceil_formula_and_freeze_cap() {
     let slicer = FreezeLimitSlicer::new(Arc::new(indexed_catalog()));
     // 2500 NIFTY equivalents against freeze 1800 → 1800 + 700.
     let mut parent = parent_request(2500);
-    parent.instrument.symbol = "NIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "NIFTY").unwrap();
     let plan = slicer.plan(&parent).unwrap();
     assert_eq!(plan.legs.len(), 2);
     assert_eq!(
-        plan.legs[0].quantity.0.to_string(),
+        plan.legs[0].quantity.value().to_string(),
         "1800",
         "greedy full freeze chunk"
     );
-    assert_eq!(plan.legs[1].quantity.0.to_string(), "700", "remainder leg");
+    assert_eq!(
+        plan.legs[1].quantity.value().to_string(),
+        "700",
+        "remainder leg"
+    );
     // BANKNIFTY familiar case: 5000 @ 900 → 900*5 + 500.
     let mut parent = parent_request(5000);
-    parent.instrument.symbol = "BANKNIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "BANKNIFTY").unwrap();
     let plan = slicer.plan(&parent).unwrap();
     assert_eq!(plan.legs.len(), 6);
     assert!(
         plan.legs[0..5]
             .iter()
-            .all(|leg| leg.quantity.0.to_string() == "900")
+            .all(|leg| leg.quantity.value().to_string() == "900")
     );
-    assert_eq!(plan.legs[5].quantity.0.to_string(), "500");
+    assert_eq!(plan.legs[5].quantity.value().to_string(), "500");
     for leg in &plan.legs {
         assert!(
-            leg.quantity.0 <= rust_decimal::Decimal::from(900),
+            leg.quantity.value() <= rust_decimal::Decimal::from(900),
             "freeze invariant {leg:?}"
         );
     }
@@ -68,7 +74,7 @@ fn unknown_instrument_uses_default_or_passes_through() {
     let slicer = FreezeLimitSlicer::new(Arc::new(catalog.clone()));
     let plan = slicer.plan(&parent_request(1000)).unwrap();
     assert_eq!(plan.legs.len(), 3, "400 + 400 + 200");
-    assert_eq!(plan.total_quantity().0.to_string(), "1000");
+    assert_eq!(plan.total_quantity().value().to_string(), "1000");
 
     catalog = catalog.with_default_freeze(None);
     let slicer = FreezeLimitSlicer::new(Arc::new(catalog));
@@ -81,7 +87,8 @@ async fn orchestrator_places_children_with_synchronized_ids() {
     let catalog = Arc::new(indexed_catalog());
     let slicer = FreezeLimitSlicer::new(catalog.clone());
     let mut parent = parent_request(2500);
-    parent.instrument.symbol = "NIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "NIFTY").unwrap();
     let plan = slicer.plan(&parent).unwrap();
 
     let broker = ScriptedBroker::new(vec!["L1".into(), "L2".into()]);
@@ -111,18 +118,19 @@ async fn orchestrator_places_children_with_synchronized_ids() {
         assert_eq!(child.client_id, parent.client_id);
     }
     assert_eq!(
-        placed[0].quantity.0.to_string(),
+        placed[0].quantity.value().to_string(),
         "1800",
         "children submit in plan order"
     );
-    assert_eq!(placed[1].quantity.0.to_string(), "700");
+    assert_eq!(placed[1].quantity.value().to_string(), "700");
 }
 
 #[tokio::test]
 async fn orchestrator_aborts_on_first_failed_leg() {
     let slicer = FreezeLimitSlicer::new(Arc::new(indexed_catalog()));
     let mut parent = parent_request(3000);
-    parent.instrument.symbol = "NIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "NIFTY").unwrap();
     let plan = slicer.plan(&parent).unwrap();
     assert_eq!(plan.legs.len(), 2);
 
@@ -145,15 +153,16 @@ async fn sell_side_children_inherit_side_and_symbol_exactly() {
     let slicer = FreezeLimitSlicer::new(Arc::new(indexed_catalog()));
     let mut parent = parent_request(400);
     parent.side = OrderSide::Sell;
-    parent.instrument.symbol = "NIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "NIFTY").unwrap();
     let plan = slicer.plan(&parent).unwrap();
     assert_eq!(plan.legs.len(), 1);
     let broker = ScriptedBroker::new(vec!["CHILD".into()]);
     place_slice_plan(&broker, &parent, &plan).await.unwrap();
     let placed = broker.placed();
     assert_eq!(placed[0].side, OrderSide::Sell);
-    assert_eq!(placed[0].instrument.symbol, "NIFTY");
-    assert_eq!(placed[0].quantity.0.to_string(), "400");
+    assert_eq!(placed[0].instrument.symbol(), "NIFTY");
+    assert_eq!(placed[0].quantity.value().to_string(), "400");
 }
 
 #[test]
@@ -161,13 +170,13 @@ fn free_function_plan_against_explicit_limit() {
     // No limit → single leg carrying the full quantity.
     let plan = plan_against_limit(&parent_request(7777), None).unwrap();
     assert_eq!(plan.legs.len(), 1);
-    assert_eq!(plan.legs[0].quantity.0.to_string(), "7777");
+    assert_eq!(plan.legs[0].quantity.value().to_string(), "7777");
 
     // Cap smaller than the parent → greedy deterministic chunks.
     let plan = plan_against_limit(&parent_request(10), Some(4)).unwrap();
     assert_eq!(plan.legs.len(), 3);
-    assert_eq!(plan.legs[0].quantity.0.to_string(), "4");
-    assert_eq!(plan.legs[2].quantity.0.to_string(), "2");
+    assert_eq!(plan.legs[0].quantity.value().to_string(), "4");
+    assert_eq!(plan.legs[2].quantity.value().to_string(), "2");
 
     // Zero parent quantity is a domain violation, not a silent empty plan.
     let err = plan_against_limit(&parent_request(0), Some(4)).unwrap_err();

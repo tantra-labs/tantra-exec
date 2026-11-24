@@ -15,7 +15,7 @@ use tantra_exec_paper::{PaperExchange, PaperExchangeExecutor};
 use uuid::Uuid;
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "RELIANCE")
+    InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap()
 }
 
 fn order(side: OrderSide, otype: OrderType, qty: u64, n: u128) -> OrderRequest {
@@ -36,16 +36,16 @@ fn seeded_exchange() -> PaperExchange {
     let t = Utc::now();
     ex.feed_tick(&Tick::Quote {
         instrument: inst(),
-        bid: Price::new(dec!(100)),
-        ask: Price::new(dec!(105)),
+        bid: Price::try_new(dec!(100)).unwrap(),
+        ask: Price::try_new(dec!(105)).unwrap(),
         bid_qty: Quantity::from_u64(50),
         ask_qty: Quantity::from_u64(50),
-        last_price: Some(Price::new(dec!(100))),
+        last_price: Some(Price::try_new(dec!(100)).unwrap()),
         exchange_ts: t,
         receive_ts: t,
         band: None,
     });
-    ex.set_market_price(inst(), Price::new(dec!(100)));
+    ex.set_market_price(inst(), Price::try_new(dec!(100)).unwrap());
     ex
 }
 
@@ -77,7 +77,7 @@ fn sync_cancel_resting_limit_then_second_cancel_errors() {
     // A resting buy limit stays New while working (no ask depth to match).
     let req = order(
         OrderSide::Buy,
-        OrderType::Limit(Price::new(dec!(90))),
+        OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
         10,
         8,
     );

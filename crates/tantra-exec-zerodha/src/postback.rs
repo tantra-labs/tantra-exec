@@ -319,10 +319,11 @@ fn postback_to_event(
                 // Postbacks carry no client correlation id; the OMS resolves
                 // ownership by broker order id.
                 client_order_id: uuid::Uuid::nil(),
-                instrument: InstrumentId::new(
+                instrument: InstrumentId::try_new(
                     exchange_of(pb.exchange.as_deref()),
                     pb.tradingsymbol.clone().unwrap_or_default(),
-                ),
+                )
+                .ok()?,
                 side: side_of(pb.transaction_type.as_deref()),
                 price: position_price(pb.average_price.as_ref(), pb.price.as_ref()),
                 quantity: Quantity::from_u64(delta),
@@ -361,7 +362,7 @@ fn side_of(transaction_type: Option<&str>) -> OrderSide {
 fn position_price(average: Option<&Value>, limit: Option<&Value>) -> Price {
     let avg = average.and_then(tantra_exec_core::wire::price_from_json);
     if let Some(p) = avg {
-        if p.0.is_zero() {
+        if p.value().is_zero() {
             return limit
                 .and_then(tantra_exec_core::wire::price_from_json)
                 .unwrap_or(Price::ZERO);

@@ -13,7 +13,7 @@ use tantra_exec_slicer::plan_against_limit;
 
 fn make_req(qty: u64) -> OrderRequest {
     OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "NIFTY"),
+        InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("22000.00").unwrap()),
         Quantity::from_u64(qty),
@@ -32,7 +32,7 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         1,
         "Mutant kill: qty == limit must have 1 leg"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit));
 
     // Boundary 2: qty == limit + 1 -> exactly 2 legs (size limit, size 1)
     // If mutant used integer division (qty / limit), it would yield 1 leg and drop 1 lot!
@@ -42,9 +42,9 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         2,
         "Mutant kill: qty == limit + 1 must have 2 legs, not qty / limit"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit));
-    assert_eq!(plan.legs[1].quantity.0, Decimal::from(1));
-    assert_eq!(plan.total_quantity().0, Decimal::from(limit + 1));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit));
+    assert_eq!(plan.legs[1].quantity.value(), Decimal::from(1));
+    assert_eq!(plan.total_quantity().value(), Decimal::from(limit + 1));
 
     // Boundary 3: qty == limit - 1 -> exactly 1 leg
     let plan = plan_against_limit(&make_req(limit - 1), Some(limit)).expect("plan");
@@ -53,7 +53,7 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         1,
         "Mutant kill: qty == limit - 1 must have 1 leg"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit - 1));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit - 1));
 
     // Boundary 4: qty == 2 * limit - 1 -> exactly 2 legs (limit, limit - 1)
     let plan = plan_against_limit(&make_req(2 * limit - 1), Some(limit)).expect("plan");
@@ -62,8 +62,8 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         2,
         "Mutant kill: qty == 2 * limit - 1 must have 2 legs"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit));
-    assert_eq!(plan.legs[1].quantity.0, Decimal::from(limit - 1));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit));
+    assert_eq!(plan.legs[1].quantity.value(), Decimal::from(limit - 1));
 
     // Boundary 5: qty == 2 * limit -> exactly 2 legs (limit, limit)
     let plan = plan_against_limit(&make_req(2 * limit), Some(limit)).expect("plan");
@@ -72,8 +72,8 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         2,
         "Mutant kill: qty == 2 * limit must have 2 legs"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit));
-    assert_eq!(plan.legs[1].quantity.0, Decimal::from(limit));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit));
+    assert_eq!(plan.legs[1].quantity.value(), Decimal::from(limit));
 
     // Boundary 6: qty == 2 * limit + 1 -> exactly 3 legs (limit, limit, 1)
     // If mutant used integer division (2*limit + 1) / limit = 2 legs!
@@ -83,10 +83,10 @@ fn test_mutation_kill_integer_division_vs_div_ceil() {
         3,
         "Mutant kill: qty == 2 * limit + 1 must have 3 legs"
     );
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(limit));
-    assert_eq!(plan.legs[1].quantity.0, Decimal::from(limit));
-    assert_eq!(plan.legs[2].quantity.0, Decimal::from(1));
-    assert_eq!(plan.total_quantity().0, Decimal::from(2 * limit + 1));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(limit));
+    assert_eq!(plan.legs[1].quantity.value(), Decimal::from(limit));
+    assert_eq!(plan.legs[2].quantity.value(), Decimal::from(1));
+    assert_eq!(plan.total_quantity().value(), Decimal::from(2 * limit + 1));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn test_mutation_kill_zero_and_fractional_quantities() {
 
     // Fractional quantity must be rejected (exact integer lots mandated by Indian exchanges)
     let mut req_frac = make_req(100);
-    req_frac.quantity = Quantity::new(Decimal::new(1005, 1)); // 100.5
+    req_frac.quantity = Quantity::try_new(Decimal::new(1005, 1)).unwrap(); // 100.5
     let err = plan_against_limit(&req_frac, Some(1800)).unwrap_err();
     assert!(matches!(err, BrokerError::InvalidRequest(_)));
 }
@@ -109,18 +109,18 @@ fn test_mutation_kill_chunk_cap_and_min_chunking() {
     for qty in [1u64, 50, 899, 900, 901, 1799, 1800, 1801, 2700, 2701, 10000] {
         let plan = plan_against_limit(&make_req(qty), Some(limit)).expect("plan");
         // Invariant 1: Total child quantity exactly equals parent quantity
-        assert_eq!(plan.total_quantity().0, Decimal::from(qty));
+        assert_eq!(plan.total_quantity().value(), Decimal::from(qty));
 
         // Invariant 2: No child leg exceeds freeze limit
         for leg in &plan.legs {
             assert!(
-                leg.quantity.0 <= Decimal::from(limit),
+                leg.quantity.value() <= Decimal::from(limit),
                 "Leg quantity {} exceeds freeze limit {}",
-                leg.quantity.0,
+                leg.quantity.value(),
                 limit
             );
             assert!(
-                leg.quantity.0 > Decimal::ZERO,
+                leg.quantity.value() > Decimal::ZERO,
                 "Leg quantity must be positive"
             );
         }
@@ -148,13 +148,13 @@ fn test_mutation_kill_single_leg_limit_and_unbounded() {
     let plan = plan_against_limit(&make_req(5), Some(1)).expect("plan");
     assert_eq!(plan.legs.len(), 5);
     for leg in &plan.legs {
-        assert_eq!(leg.quantity.0, Decimal::from(1));
+        assert_eq!(leg.quantity.value(), Decimal::from(1));
     }
 
     // Freeze = None: single leg passes through unchanged
     let plan = plan_against_limit(&make_req(50_000), None).expect("plan");
     assert_eq!(plan.legs.len(), 1);
-    assert_eq!(plan.legs[0].quantity.0, Decimal::from(50_000));
+    assert_eq!(plan.legs[0].quantity.value(), Decimal::from(50_000));
 }
 
 #[test]

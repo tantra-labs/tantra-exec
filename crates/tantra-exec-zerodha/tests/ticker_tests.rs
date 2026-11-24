@@ -48,7 +48,7 @@ fn parses_order_frames_with_object_and_array_data() {
     assert_eq!(
         tantra_exec_core::wire::price_from_json(&single[0].average_price.clone().unwrap())
             .unwrap()
-            .0
+            .value()
             .to_string(),
         "470.25"
     );
@@ -109,8 +109,8 @@ async fn stream_emits_ack_then_delta_fills_rejection_cancel() {
         let event = stream.next_event().await.expect("fill");
         match event {
             BrokerExecutionEvent::Fill(fill) => {
-                assert_eq!(fill.quantity.0.to_string(), expected);
-                assert_eq!(fill.price.0.to_string(), "470.25");
+                assert_eq!(fill.quantity.value().to_string(), expected);
+                assert_eq!(fill.price.value().to_string(), "470.25");
                 assert!(
                     fill.fill_id.starts_with("220119000332528:"),
                     "cumulative fill id: {}",

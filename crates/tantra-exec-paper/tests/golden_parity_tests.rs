@@ -75,20 +75,23 @@ fn side(s: &str) -> OrderSide {
 /// the tape's order labels (`buy101` / `buy100` / `sell`) to the broker order
 /// ids returned by the engine.
 fn run_tape(tape: &GoldenTape) -> (PaperExchange, HashMap<String, String>) {
-    let inst = InstrumentId::new(Exchange::Nse, "RELIANCE");
+    let inst = InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap();
     let ts0 = DateTime::parse_from_rfc3339(&tape.ts0)
         .expect("valid rfc3339 ts0 in golden tape")
         .with_timezone(&Utc);
     let mut ex =
         PaperExchange::new(decimal(&tape.initial_cash)).with_cost_fn(Box::new(ZeroFillCost));
-    ex.set_market_price(inst.clone(), Price::new(decimal(&tape.market_price)));
+    ex.set_market_price(
+        inst.clone(),
+        Price::try_new(decimal(&tape.market_price)).unwrap(),
+    );
 
     let mut ids = HashMap::new();
     for order in &tape.orders {
         let order_type = match order.order_type.as_str() {
-            "LIMIT" => OrderType::Limit(Price::new(decimal(
-                order.limit_price.as_ref().expect("limit price"),
-            ))),
+            "LIMIT" => OrderType::Limit(
+                Price::try_new(decimal(order.limit_price.as_ref().expect("limit price"))).unwrap(),
+            ),
             "MARKET" => OrderType::Market,
             other => panic!("unknown order type {other:?} in golden tape"),
         };
@@ -97,7 +100,7 @@ fn run_tape(tape: &GoldenTape) -> (PaperExchange, HashMap<String, String>) {
             inst.clone(),
             side(&order.side),
             order_type,
-            Quantity::new(decimal(&order.quantity)),
+            Quantity::try_new(decimal(&order.quantity)).unwrap(),
             "paper_golden",
         );
         let id = ex.submit_order(req, ts0).unwrap();
@@ -143,9 +146,13 @@ fn golden_tape_fills_match_golden_values() {
 
     for (idx, expected) in tape.expected.fills.iter().enumerate() {
         let fill = &fills[idx];
-        assert_eq!(fill.price.0, decimal(&expected.price), "fill {idx} price");
         assert_eq!(
-            fill.quantity.0,
+            fill.price.value(),
+            decimal(&expected.price),
+            "fill {idx} price"
+        );
+        assert_eq!(
+            fill.quantity.value(),
             decimal(&expected.quantity),
             "fill {idx} quantity"
         );
@@ -198,15 +205,18 @@ fn golden_tape_order_states_and_account() {
     );
     let sell = ex.order(ids.get("sell").expect("sell id")).unwrap();
     assert_eq!(sell.state, golden_state("sell"));
-    assert_eq!(sell.filled_qty.0, decimal(&tape.expected.sell_filled_qty));
     assert_eq!(
-        sell.avg_fill_price.0,
+        sell.filled_qty.value(),
+        decimal(&tape.expected.sell_filled_qty)
+    );
+    assert_eq!(
+        sell.avg_fill_price.value(),
         decimal(&tape.expected.sell_avg_fill_price)
     );
 
     // Zero-fee round trip: the sell nets the resting buys, so the net
     // position is flat and cash returns to the initial balance.
-    let inst = InstrumentId::new(Exchange::Nse, "RELIANCE");
+    let inst = InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap();
     assert_eq!(ex.positions().get(&inst), Some(&dec!(0)));
     assert_eq!(ex.cash(), decimal(&tape.expected.net_cash));
     assert_eq!(ex.cash(), decimal(&tape.initial_cash));

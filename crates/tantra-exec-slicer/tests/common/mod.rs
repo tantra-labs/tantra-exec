@@ -135,7 +135,7 @@ impl ExecutionStream for ScriptedStream {
 /// Canonical parent request for slicing scenarios (N shares @ 100.00).
 pub fn parent_request(qty: u64) -> OrderRequest {
     OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "RELIANCE"),
+        InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("100.00").unwrap()),
         Quantity::from_u64(qty),
@@ -149,7 +149,7 @@ pub fn fill_event(order_id: &str, quantity: u64) -> BrokerExecutionEvent {
         fill_id: format!("{order_id}:F"),
         order_id: order_id.to_string(),
         client_order_id: uuid::Uuid::nil(),
-        instrument: InstrumentId::new(Exchange::Nse, "RELIANCE"),
+        instrument: InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap(),
         side: OrderSide::Buy,
         price: Price::from_rupees("100.00").unwrap(),
         quantity: Quantity::from_u64(quantity),

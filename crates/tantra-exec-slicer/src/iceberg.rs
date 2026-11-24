@@ -55,8 +55,8 @@ pub struct SyntheticIcebergOutcome {
 /// Derived native iceberg leg count via the gateway contract (exact division,
 /// `2..=50` legs).
 pub fn native_leg_count(parent: &Quantity, display: &Quantity) -> Result<u64, BrokerError> {
-    let parent = quantity_to_u32_exact(parent.0)? as u64;
-    let display = quantity_to_u32_exact(display.0)? as u64;
+    let parent = quantity_to_u32_exact(parent.value())? as u64;
+    let display = quantity_to_u32_exact(display.value())? as u64;
     if display == 0 || display >= parent {
         return Err(BrokerError::InvalidRequest(format!(
             "iceberg display quantity {display} must be non-zero and smaller than parent {parent}"
@@ -80,8 +80,8 @@ pub fn native_leg_count(parent: &Quantity, display: &Quantity) -> Result<u64, Br
 /// Greedy synthetic leg split: legs of `display` quantity, last leg carries
 /// the remainder (which may be smaller than `display`).
 pub fn display_legs(parent: &Quantity, display: &Quantity) -> Result<Vec<Quantity>, BrokerError> {
-    let parent = quantity_to_u32_exact(parent.0)? as u64;
-    let display = quantity_to_u32_exact(display.0)? as u64;
+    let parent = quantity_to_u32_exact(parent.value())? as u64;
+    let display = quantity_to_u32_exact(display.value())? as u64;
     if display == 0 {
         return Err(BrokerError::InvalidRequest(
             "iceberg display quantity must be positive".into(),
@@ -156,11 +156,15 @@ pub async fn run_synthetic_iceberg(
         match leg_state {
             LegTerminal::Filled => {
                 outcome.filled_legs.push(order_id);
-                outcome.filled = Quantity::new(outcome.filled.0 + leg_quantity.0);
+                outcome.filled = Quantity::try_new(outcome.filled.value() + leg_quantity.value())
+                    .unwrap_or(outcome.filled);
             }
             LegTerminal::Abandoned(unfilled) => {
                 outcome.unfinished_legs.push(order_id);
-                outcome.filled = Quantity::new(outcome.filled.0 + (leg_quantity.0 - unfilled));
+                outcome.filled = Quantity::try_new(
+                    (outcome.filled.value() + (leg_quantity.value() - unfilled)).max(Decimal::ZERO),
+                )
+                .unwrap_or(outcome.filled);
             }
         }
     }
@@ -181,7 +185,7 @@ async fn await_leg_terminal(
     leg_quantity: Quantity,
     wait: Duration,
 ) -> Result<LegTerminal, BrokerError> {
-    let target = leg_quantity.0;
+    let target = leg_quantity.value();
     let mut filled = Decimal::ZERO;
     let mut cancel_requested = false;
     loop {
@@ -204,7 +208,7 @@ async fn await_leg_terminal(
         match event {
             BrokerExecutionEvent::OrderAck(_) => {}
             BrokerExecutionEvent::Fill(FillReport { quantity, .. }) => {
-                filled += quantity.0;
+                filled += quantity.value();
                 if filled >= target {
                     return Ok(LegTerminal::Filled);
                 }

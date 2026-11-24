@@ -19,7 +19,7 @@ fn at(secs: i64) -> DateTime<Utc> {
 }
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "NIFTY")
+    InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap()
 }
 
 fn entry_buy(price: &str, qty: u64) -> OrderRequest {

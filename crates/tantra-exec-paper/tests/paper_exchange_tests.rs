@@ -13,7 +13,7 @@ use tantra_exec_paper::{ExchangeEvent, FillReport, OrderState, PaperExchange};
 use uuid::Uuid;
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "RELIANCE")
+    InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap()
 }
 
 fn order(side: OrderSide, otype: OrderType, qty: u64, n: u128) -> OrderRequest {
@@ -46,7 +46,7 @@ fn e1_price_priority_across_resting_participants() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(101))),
+                OrderType::Limit(Price::try_new(dec!(101)).unwrap()),
                 100,
                 1,
             ),
@@ -57,7 +57,7 @@ fn e1_price_priority_across_resting_participants() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(100))),
+                OrderType::Limit(Price::try_new(dec!(100)).unwrap()),
                 100,
                 2,
             ),
@@ -72,19 +72,19 @@ fn e1_price_priority_across_resting_participants() {
     let o1 = ex.order(&b1).unwrap();
     assert_eq!(o1.state, OrderState::Filled);
     assert_eq!(o1.filled_qty, Quantity::from_u64(100));
-    assert_eq!(o1.avg_fill_price, Price::new(dec!(101)));
+    assert_eq!(o1.avg_fill_price, Price::try_new(dec!(101)).unwrap());
 
     // Second buy filled 50 @ 100, still partially filled.
     let o2 = ex.order(&b2).unwrap();
     assert_eq!(o2.state, OrderState::PartiallyFilled);
     assert_eq!(o2.filled_qty, Quantity::from_u64(50));
-    assert_eq!(o2.avg_fill_price, Price::new(dec!(100)));
+    assert_eq!(o2.avg_fill_price, Price::try_new(dec!(100)).unwrap());
 
     // Sell fills 150 at VWAP = (100*101 + 50*100)/150 = 100.6667.
     let os = ex.order(&s).unwrap();
     assert_eq!(os.state, OrderState::Filled);
     assert_eq!(os.filled_qty, Quantity::from_u64(150));
-    assert_eq!(os.avg_fill_price, Price::new(dec!(100.6667)));
+    assert_eq!(os.avg_fill_price, Price::try_new(dec!(100.6667)).unwrap());
 
     // Net position: +100 +50 -150 = 0.
     assert_eq!(ex.positions().get(&inst()), Some(&Decimal::ZERO));
@@ -103,7 +103,7 @@ fn e2_multi_level_vwap_with_ioc_cancel() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(100))),
+                OrderType::Limit(Price::try_new(dec!(100)).unwrap()),
                 40,
                 1,
             ),
@@ -114,7 +114,7 @@ fn e2_multi_level_vwap_with_ioc_cancel() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(99))),
+                OrderType::Limit(Price::try_new(dec!(99)).unwrap()),
                 20,
                 2,
             ),
@@ -131,7 +131,7 @@ fn e2_multi_level_vwap_with_ioc_cancel() {
     let os = ex.order(&s).unwrap();
     assert_eq!(os.state, OrderState::Cancelled);
     assert_eq!(os.filled_qty, Quantity::from_u64(60));
-    assert_eq!(os.avg_fill_price, Price::new(dec!(99.6667)));
+    assert_eq!(os.avg_fill_price, Price::try_new(dec!(99.6667)).unwrap());
 
     assert!(ex.events().iter().any(
         |e| matches!(e, ExchangeEvent::Cancelled { broker_order_id, .. } if broker_order_id == &s)
@@ -156,7 +156,7 @@ fn e3_ioc_fills_available_and_cancels_remainder() {
         .submit_order(
             order(
                 OrderSide::Sell,
-                OrderType::Limit(Price::new(dec!(100))),
+                OrderType::Limit(Price::try_new(dec!(100)).unwrap()),
                 150,
                 1,
             ),
@@ -172,7 +172,7 @@ fn e3_ioc_fills_available_and_cancels_remainder() {
     let ob = ex.order(&b).unwrap();
     assert_eq!(ob.state, OrderState::Cancelled);
     assert_eq!(ob.filled_qty, Quantity::from_u64(150));
-    assert_eq!(ob.avg_fill_price, Price::new(dec!(100)));
+    assert_eq!(ob.avg_fill_price, Price::try_new(dec!(100)).unwrap());
 
     assert_eq!(ex.order(&s1).unwrap().state, OrderState::Filled);
     assert!(ex.events().iter().any(
@@ -195,7 +195,7 @@ fn e4_gtd_expiry_cancels_unfilled_order() {
         .submit_order_gtd(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(90))),
+                OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
                 100,
                 1,
             ),
@@ -224,14 +224,14 @@ fn e5_stop_limit_arms_then_triggers_and_fills() {
     let mut ex = PaperExchange::new(dec!(1_000_000));
     let t0 = ts();
     let i = inst();
-    ex.set_market_price(i.clone(), Price::new(dec!(100)));
+    ex.set_market_price(i.clone(), Price::try_new(dec!(100)).unwrap());
 
     // Resting sell provides the ask at the stop's limit.
     let s1 = ex
         .submit_order(
             order(
                 OrderSide::Sell,
-                OrderType::Limit(Price::new(dec!(106))),
+                OrderType::Limit(Price::try_new(dec!(106)).unwrap()),
                 10,
                 1,
             ),
@@ -245,8 +245,8 @@ fn e5_stop_limit_arms_then_triggers_and_fills() {
             order(
                 OrderSide::Buy,
                 OrderType::StopLimit {
-                    trigger: Price::new(dec!(105)),
-                    limit: Price::new(dec!(106)),
+                    trigger: Price::try_new(dec!(105)).unwrap(),
+                    limit: Price::try_new(dec!(106)).unwrap(),
                 },
                 10,
                 2,
@@ -261,7 +261,7 @@ fn e5_stop_limit_arms_then_triggers_and_fills() {
     // Feed a tick whose last price (107) crosses the trigger.
     let tick = Tick::Ltp {
         instrument: i.clone(),
-        price: Price::new(dec!(107)),
+        price: Price::try_new(dec!(107)).unwrap(),
         volume: Quantity::from_u64(0),
         exchange_ts: t0,
         receive_ts: t0,
@@ -270,7 +270,7 @@ fn e5_stop_limit_arms_then_triggers_and_fills() {
 
     let os = ex.order(&stop).unwrap();
     assert_eq!(os.state, OrderState::Filled);
-    assert_eq!(os.avg_fill_price, Price::new(dec!(106)));
+    assert_eq!(os.avg_fill_price, Price::try_new(dec!(106)).unwrap());
     assert!(ex
         .events()
         .iter()
@@ -293,7 +293,7 @@ fn e6_cancel_then_amend_then_fill() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(90))),
+                OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
                 50,
                 1,
             ),
@@ -316,26 +316,29 @@ fn e6_cancel_then_amend_then_fill() {
         .submit_order(
             order(
                 OrderSide::Buy,
-                OrderType::Limit(Price::new(dec!(90))),
+                OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
                 40,
                 2,
             ),
             t0,
         )
         .unwrap();
-    ex.amend_order(&b2, Some(Price::new(dec!(95))), None, t0)
+    ex.amend_order(&b2, Some(Price::try_new(dec!(95)).unwrap()), None, t0)
         .unwrap();
     let ob = ex.order(&b2).unwrap();
-    assert_eq!(ob.order_type, OrderType::Limit(Price::new(dec!(95))));
+    assert_eq!(
+        ob.order_type,
+        OrderType::Limit(Price::try_new(dec!(95)).unwrap())
+    );
     assert_eq!(ob.state, OrderState::Working);
 
     let tick = Tick::Quote {
         instrument: i.clone(),
-        bid: Price::new(dec!(95)),
-        ask: Price::new(dec!(95)),
+        bid: Price::try_new(dec!(95)).unwrap(),
+        ask: Price::try_new(dec!(95)).unwrap(),
         bid_qty: Quantity::from_u64(40),
         ask_qty: Quantity::from_u64(40),
-        last_price: Some(Price::new(dec!(95))),
+        last_price: Some(Price::try_new(dec!(95)).unwrap()),
         exchange_ts: t0,
         receive_ts: t0,
         band: None,
@@ -344,7 +347,7 @@ fn e6_cancel_then_amend_then_fill() {
 
     let ob = ex.order(&b2).unwrap();
     assert_eq!(ob.state, OrderState::Filled);
-    assert_eq!(ob.avg_fill_price, Price::new(dec!(95)));
+    assert_eq!(ob.avg_fill_price, Price::try_new(dec!(95)).unwrap());
     assert_eq!(ex.positions().get(&i), Some(&Decimal::from(40)));
 }
 
@@ -370,12 +373,12 @@ fn run_tape() -> Tape {
     let mut ex = PaperExchange::new(dec!(1_000_000));
     let t0 = ts();
     let i = inst();
-    ex.set_market_price(i.clone(), Price::new(dec!(100)));
+    ex.set_market_price(i.clone(), Price::try_new(dec!(100)).unwrap());
 
     ex.submit_order(
         order(
             OrderSide::Buy,
-            OrderType::Limit(Price::new(dec!(101))),
+            OrderType::Limit(Price::try_new(dec!(101)).unwrap()),
             100,
             1,
         ),
@@ -385,7 +388,7 @@ fn run_tape() -> Tape {
     ex.submit_order(
         order(
             OrderSide::Buy,
-            OrderType::Limit(Price::new(dec!(100))),
+            OrderType::Limit(Price::try_new(dec!(100)).unwrap()),
             100,
             2,
         ),
@@ -398,7 +401,7 @@ fn run_tape() -> Tape {
     // partial buy (which is not marketable at 100 against an ask of 105).
     ex.feed_tick(&Tick::Ltp {
         instrument: i,
-        price: Price::new(dec!(105)),
+        price: Price::try_new(dec!(105)).unwrap(),
         volume: Quantity::from_u64(10),
         exchange_ts: t0,
         receive_ts: t0,
@@ -422,7 +425,7 @@ fn cash_and_positions_accounting_on_cross() {
         .submit_order(
             order(
                 OrderSide::Sell,
-                OrderType::Limit(Price::new(dec!(100))),
+                OrderType::Limit(Price::try_new(dec!(100)).unwrap()),
                 10,
                 1,
             ),

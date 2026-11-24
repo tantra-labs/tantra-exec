@@ -109,8 +109,8 @@ fn decode_emits_fill_with_delta_tracking() {
     assert_eq!(events.len(), 1);
     match &events[0] {
         BrokerExecutionEvent::Fill(fill) => {
-            assert_eq!(fill.quantity.0.to_string(), "25");
-            assert_eq!(fill.price.0.to_string(), "470.25");
+            assert_eq!(fill.quantity.value().to_string(), "25");
+            assert_eq!(fill.price.value().to_string(), "470.25");
             assert_eq!(fill.order_id, "220303000308932");
             assert_eq!(fill.algo_id, "algo-m2");
             assert_eq!(fill.side, tantra_core::OrderSide::Buy);
@@ -134,7 +134,7 @@ fn decode_emits_fill_with_delta_tracking() {
     );
     let events = decode_postback_payload(&frame_complete, secret, &mut fills).expect("events");
     match &events[0] {
-        BrokerExecutionEvent::Fill(fill) => assert_eq!(fill.quantity.0.to_string(), "75"),
+        BrokerExecutionEvent::Fill(fill) => assert_eq!(fill.quantity.value().to_string(), "75"),
         other => panic!("expected fill, got {other:?}"),
     }
 }
@@ -258,7 +258,7 @@ async fn webhook_delivers_fill_and_forgeries_get_rejected() {
     match event {
         BrokerExecutionEvent::Fill(fill) => {
             assert_eq!(fill.order_id, "220303000308932");
-            assert_eq!(fill.quantity.0, rust_decimal::Decimal::from(100));
+            assert_eq!(fill.quantity.value(), rust_decimal::Decimal::from(100));
         }
         other => panic!("expected fill, got {other:?}"),
     }

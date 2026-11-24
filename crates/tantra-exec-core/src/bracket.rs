@@ -503,7 +503,8 @@ impl BracketTracker {
             let filled = self.remaining_targets.remove(0);
             self.filled_targets.push(filled);
         }
-        self.open_qty = Quantity::new(self.open_qty.value() - qty.value());
+        self.open_qty = Quantity::try_new(self.open_qty.value() - qty.value())
+            .map_err(|e| BracketError::InvalidSpec(e.to_string()))?;
         self.events.push(BracketEvent::PartialExit {
             price,
             qty,
@@ -590,6 +591,6 @@ impl BracketTracker {
             .filled_targets
             .iter()
             .fold(Decimal::ZERO, |acc, leg| acc + leg.qty.value());
-        Quantity::new(total)
+        Quantity::try_new(total).unwrap_or(Quantity::ZERO)
     }
 }

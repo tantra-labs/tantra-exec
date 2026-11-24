@@ -49,12 +49,12 @@ pub fn decimal_from_number(number: &serde_json::Number) -> Option<Decimal> {
 
 /// Extract a [`Price`] from a JSON value (see [`decimal_from_json`]).
 pub fn price_from_json(value: &Value) -> Option<Price> {
-    decimal_from_json(value).map(Price::new)
+    decimal_from_json(value).and_then(|d| Price::try_new(d).ok())
 }
 
 /// Extract a [`Quantity`] from a JSON value (see [`decimal_from_json`]).
 pub fn quantity_from_json(value: &Value) -> Option<Quantity> {
-    decimal_from_json(value).map(Quantity::new)
+    decimal_from_json(value).and_then(|d| Quantity::try_new(d).ok())
 }
 
 /// Parse a broker-reported timestamp into UTC, treating naive wall-clock text

@@ -12,7 +12,9 @@ use tantra_exec_angelone::build_order_payload;
 use tantra_exec_core::types::ProductType;
 
 fn request(order_type: OrderType) -> OrderRequest {
-    let instrument = InstrumentId::new(Exchange::Nse, "RELIANCE").with_token("2885".to_string());
+    let instrument = InstrumentId::try_new(Exchange::Nse, "RELIANCE")
+        .unwrap()
+        .with_token("2885".to_string());
     OrderRequest::new(
         instrument,
         OrderSide::Buy,
@@ -86,7 +88,7 @@ fn sell_side_and_ioc_duration() {
 
 #[test]
 fn symboltoken_falls_back_to_symbol() {
-    let instrument = InstrumentId::new(Exchange::Nfo, "NIFTY24DEC24000CE");
+    let instrument = InstrumentId::try_new(Exchange::Nfo, "NIFTY24DEC24000CE").unwrap();
     let order = OrderRequest::new(
         instrument,
         OrderSide::Buy,

@@ -108,18 +108,18 @@ pub fn parse_order_feed_frame(text: &str) -> Result<Vec<AngelOneFeedUpdate>, Bro
     }
 }
 
-fn feed_instrument(update: &AngelOneFeedUpdate) -> InstrumentId {
+fn feed_instrument(update: &AngelOneFeedUpdate) -> Option<InstrumentId> {
     let exchange = crate::mapping::exchange(update.exchange.as_deref().unwrap_or_default());
     let symbol = update
         .trading_symbol
         .as_deref()
         .unwrap_or_default()
         .to_uppercase();
-    let mut instrument = InstrumentId::new(exchange, symbol);
+    let mut instrument = InstrumentId::try_new(exchange, symbol).ok()?;
     if let Some(token) = update.symbol_token.as_deref() {
         instrument = instrument.with_token(token.to_string());
     }
-    instrument
+    Some(instrument)
 }
 
 fn feed_side(update: &AngelOneFeedUpdate) -> OrderSide {
@@ -146,7 +146,7 @@ fn feed_fill_price(update: &AngelOneFeedUpdate) -> Price {
         .average_price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero());
+        .filter(|p| !p.value().is_zero());
     if let Some(price) = average {
         return price;
     }
@@ -154,7 +154,7 @@ fn feed_fill_price(update: &AngelOneFeedUpdate) -> Price {
         .price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero())
+        .filter(|p| !p.value().is_zero())
         .unwrap_or(Price::ZERO)
 }
 
@@ -229,7 +229,7 @@ impl AngelOneOrderStream {
                     fill_id: format!("{order_id}:{filled}"),
                     order_id,
                     client_order_id,
-                    instrument: feed_instrument(&update),
+                    instrument: feed_instrument(&update)?,
                     side: feed_side(&update),
                     price: feed_fill_price(&update),
                     quantity: Quantity::from_u64(filled - previous),

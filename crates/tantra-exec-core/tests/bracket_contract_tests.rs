@@ -9,7 +9,7 @@ use tantra_exec_core::bracket::{BracketCapabilities, BracketOrderSpec, stop_clie
 use tantra_exec_core::{BrokerError, BrokerExecutor, MockBrokerExecutor};
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "NIFTY")
+    InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap()
 }
 
 fn entry_buy(price: &str, qty: u64) -> OrderRequest {

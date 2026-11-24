@@ -216,7 +216,7 @@ impl BrokerExecutor for PaperExchangeExecutor {
                 instrument: instrument.clone(),
                 product: ProductType::CncDelivery,
                 side,
-                quantity: Quantity::new(qty.abs()),
+                quantity: Quantity::try_new(qty.abs()).unwrap_or(Quantity::ZERO),
                 average_price: last_price.unwrap_or(Price::ZERO),
                 realized_pnl: None,
                 last_price,

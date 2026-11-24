@@ -119,11 +119,11 @@ impl ZerodhaExecutor {
         req: &OrderRequest,
         product: ProductType,
     ) -> Result<HashMap<&'static str, String>, BrokerError> {
-        let quantity = quantity_to_u32_exact(req.quantity.0)?;
+        let quantity = quantity_to_u32_exact(req.quantity.value())?;
 
         let mut form = HashMap::new();
-        form.insert("tradingsymbol", req.instrument.symbol.clone());
-        form.insert("exchange", req.instrument.exchange.to_string());
+        form.insert("tradingsymbol", req.instrument.symbol().to_string());
+        form.insert("exchange", req.instrument.exchange().to_string());
 
         let trans_type = match req.side {
             OrderSide::Buy => "BUY",
@@ -133,12 +133,12 @@ impl ZerodhaExecutor {
 
         let (order_type_str, price, trigger) = match req.order_type {
             OrderType::Market => ("MARKET", None, None),
-            OrderType::Limit(p) => ("LIMIT", Some(format_fixed_exact(p.0, 2)?), None),
-            OrderType::StopLoss(p) => ("SL-M", None, Some(format_fixed_exact(p.0, 2)?)),
+            OrderType::Limit(p) => ("LIMIT", Some(format_fixed_exact(p.value(), 2)?), None),
+            OrderType::StopLoss(p) => ("SL-M", None, Some(format_fixed_exact(p.value(), 2)?)),
             OrderType::StopLimit { trigger, limit } => (
                 "SL",
-                Some(format_fixed_exact(limit.0, 2)?),
-                Some(format_fixed_exact(trigger.0, 2)?),
+                Some(format_fixed_exact(limit.value(), 2)?),
+                Some(format_fixed_exact(trigger.value(), 2)?),
             ),
         };
         form.insert("order_type", order_type_str.to_string());
@@ -348,10 +348,10 @@ impl BrokerExecutor for ZerodhaExecutor {
         // Kite v3 modifies carry only the changed legs; build the exact form.
         let mut form: HashMap<&'static str, String> = HashMap::new();
         if let Some(p) = new_price {
-            form.insert("price", format_fixed_exact(p.0, 2)?);
+            form.insert("price", format_fixed_exact(p.value(), 2)?);
         }
         if let Some(q) = new_quantity {
-            form.insert("quantity", quantity_to_u32_exact(q.0)?.to_string());
+            form.insert("quantity", quantity_to_u32_exact(q.value())?.to_string());
         }
         if form.is_empty() {
             return Err(BrokerError::InvalidRequest(
@@ -383,9 +383,14 @@ impl BrokerExecutor for ZerodhaExecutor {
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         let value = self.get_kite("/orders").await?;
         let orders: Vec<KiteOrder> = Self::kite_data(value)?;
-        Ok(orders
+        orders
             .into_iter()
             .map(|o| {
+                let instrument =
+                    InstrumentId::try_new(mapping::exchange(&o.exchange), o.tradingsymbol.clone())
+                        .map_err(|e| {
+                            BrokerError::Transport(format!("invalid zerodha instrument: {e}"))
+                        })?;
                 let quantity = o
                     .quantity
                     .and_then(|v| wire::quantity_from_json(&v))
@@ -394,14 +399,11 @@ impl BrokerExecutor for ZerodhaExecutor {
                     .filled_quantity
                     .and_then(|v| wire::quantity_from_json(&v))
                     .unwrap_or(Quantity::ZERO);
-                OrderSnapshot {
+                Ok(OrderSnapshot {
                     order_id: o.order_id,
                     client_order_id: None,
                     exchange_order_id: o.exchange_order_id,
-                    instrument: InstrumentId::new(
-                        mapping::exchange(&o.exchange),
-                        o.tradingsymbol.clone(),
-                    ),
+                    instrument,
                     side: mapping::order_side(&o.transaction_type),
                     order_type: mapping::order_type(
                         &o.order_type,
@@ -419,18 +421,22 @@ impl BrokerExecutor for ZerodhaExecutor {
                         .as_deref()
                         .and_then(wire::parse_broker_ist_datetime)
                         .unwrap_or_else(Utc::now),
-                }
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn fetch_positions(&self) -> Result<Vec<BrokerPosition>, BrokerError> {
         let value = self.get_kite("/portfolio/positions").await?;
         let data: KitePositions = Self::kite_data(value)?;
-        Ok(data
-            .net
+        data.net
             .into_iter()
             .map(|p| {
+                let instrument =
+                    InstrumentId::try_new(mapping::exchange(&p.exchange), p.tradingsymbol.clone())
+                        .map_err(|e| {
+                            BrokerError::Transport(format!("invalid zerodha instrument: {e}"))
+                        })?;
                 let qty = p
                     .quantity
                     .and_then(|v| wire::decimal_from_json(&v))
@@ -442,14 +448,11 @@ impl BrokerExecutor for ZerodhaExecutor {
                 } else {
                     PositionSide::Long
                 };
-                BrokerPosition {
-                    instrument: InstrumentId::new(
-                        mapping::exchange(&p.exchange),
-                        p.tradingsymbol.clone(),
-                    ),
+                Ok(BrokerPosition {
+                    instrument,
                     product: kite_product_or_default(&p.product),
                     side,
-                    quantity: Quantity::new(qty.abs()),
+                    quantity: Quantity::try_new(qty.abs()).unwrap_or(Quantity::ZERO),
                     average_price: p
                         .average_price
                         .and_then(|v| wire::price_from_json(&v))
@@ -459,9 +462,9 @@ impl BrokerExecutor for ZerodhaExecutor {
                         .and_then(|v| wire::decimal_from_json(&v))
                         .map(Money::inr),
                     last_price: p.last_price.and_then(|v| wire::price_from_json(&v)),
-                }
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn fetch_margins(&self) -> Result<BrokerMargins, BrokerError> {
@@ -553,7 +556,7 @@ impl ZerodhaExecutor {
         form.insert("iceberg_legs", legs.to_string());
         form.insert(
             "iceberg_quantity",
-            quantity_to_u32_exact(display_quantity.0)?.to_string(),
+            quantity_to_u32_exact(display_quantity.value())?.to_string(),
         );
         Ok(form)
     }

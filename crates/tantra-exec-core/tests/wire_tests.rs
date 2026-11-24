@@ -63,13 +63,20 @@ fn price_and_quantity_extractors() {
     let v: Value = json!(2550.25);
     let price = price_from_json(&v).expect("price");
     assert_eq!(
-        price.0.to_string(),
+        price.value().to_string(),
         "2550.25",
         "value exact; wire scale via rescale at output"
     );
 
     let q = quantity_from_json(&json!("10")).expect("qty");
-    assert_eq!(q.0, Decimal::from(10));
+    assert_eq!(q.value(), Decimal::from(10));
+
+    assert_eq!(price_from_json(&json!(-5)), None, "negative price rejected");
+    assert_eq!(
+        quantity_from_json(&json!("-1")),
+        None,
+        "negative qty rejected"
+    );
 }
 
 #[test]

@@ -53,7 +53,9 @@ fn executor(base_url: &str) -> AngelOneExecutor {
 }
 
 fn sample_order() -> OrderRequest {
-    let instrument = InstrumentId::new(Exchange::Nse, "RELIANCE").with_token("2885".to_string());
+    let instrument = InstrumentId::try_new(Exchange::Nse, "RELIANCE")
+        .unwrap()
+        .with_token("2885".to_string());
     OrderRequest::new(
         instrument,
         OrderSide::Buy,
@@ -350,12 +352,12 @@ async fn order_book_parse() {
     assert_eq!(snapshot.exchange_order_id.as_deref(), Some("110000001"));
     assert_eq!(snapshot.status, OrderStatus::Filled);
     assert_eq!(snapshot.side, OrderSide::Buy);
-    assert_eq!(snapshot.instrument.symbol, "RELIANCE");
+    assert_eq!(snapshot.instrument.symbol(), "RELIANCE");
     assert_eq!(
         snapshot.order_type,
         OrderType::Limit(Price::from_rupees("1450.50").unwrap())
     );
-    assert_eq!(snapshot.quantity.0, rust_decimal::Decimal::from(25));
+    assert_eq!(snapshot.quantity.value(), rust_decimal::Decimal::from(25));
 }
 
 #[tokio::test]
@@ -364,11 +366,17 @@ async fn positions_parse_long_and_short() {
     let positions = executor(&base_url).fetch_positions().await.unwrap();
     assert_eq!(positions.len(), 2);
     assert_eq!(positions[0].side, PositionSide::Long);
-    assert_eq!(positions[0].quantity.0, rust_decimal::Decimal::from(50));
-    assert_eq!(positions[1].side, PositionSide::Short);
-    assert_eq!(positions[1].quantity.0, rust_decimal::Decimal::from(25));
     assert_eq!(
-        positions[0].average_price.0,
+        positions[0].quantity.value(),
+        rust_decimal::Decimal::from(50)
+    );
+    assert_eq!(positions[1].side, PositionSide::Short);
+    assert_eq!(
+        positions[1].quantity.value(),
+        rust_decimal::Decimal::from(25)
+    );
+    assert_eq!(
+        positions[0].average_price.value(),
         rust_decimal::Decimal::from_str_exact("1440.25").unwrap()
     );
 }

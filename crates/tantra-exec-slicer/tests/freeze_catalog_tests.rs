@@ -4,16 +4,13 @@ use tantra_core::{Exchange, InstrumentId};
 use tantra_exec_slicer::{FreezeLimitCatalog, builtin_index_freezes};
 
 fn sbin() -> InstrumentId {
-    InstrumentId {
-        exchange: Exchange::Nse,
-        symbol: "SBIN".into(),
-        token: Some("779521".into()),
-        isin: None,
-    }
+    InstrumentId::try_new(Exchange::Nse, "SBIN")
+        .unwrap()
+        .with_token("779521")
 }
 
 fn sbin_untokenized() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "sbin")
+    InstrumentId::try_new(Exchange::Nse, "sbin").unwrap()
 }
 
 #[test]
@@ -41,16 +38,13 @@ fn loads_nse_style_csv_with_case_insensitive_columns() {
     assert_eq!(sbin_limit.lot_size, Some(1));
 
     // NFO rows canonicalize under the NSE umbrella exchange.
-    let nifty = InstrumentId::new(Exchange::Nse, "NIFTY");
+    let nifty = InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap();
     assert_eq!(catalog.slicing_limit(&nifty).unwrap().freeze_quantity, 1800);
 
     // Token lookup wins over a symbol miss even in mixed case.
-    let via_token = InstrumentId {
-        exchange: Exchange::Nse,
-        symbol: "UNKNOWN-NAME".into(),
-        token: Some("779521".into()),
-        isin: None,
-    };
+    let via_token = InstrumentId::try_new(Exchange::Nse, "UNKNOWN-NAME")
+        .unwrap()
+        .with_token("779521");
     assert_eq!(
         catalog.slicing_limit(&via_token).unwrap().freeze_quantity,
         1000
@@ -78,7 +72,7 @@ fn csv_distinguishes_symbol_and_token_matches_and_conflicts() {
     let catalog = FreezeLimitCatalog::from_csv(csv).unwrap();
     assert_eq!(
         catalog
-            .slicing_limit(&InstrumentId::new(Exchange::Bse, "SBIN"))
+            .slicing_limit(&InstrumentId::try_new(Exchange::Bse, "SBIN").unwrap())
             .unwrap()
             .freeze_quantity,
         100
@@ -119,11 +113,11 @@ fn json_loader_accepts_numbers_and_decimal_strings() {
         1000
     );
 
-    let steel = InstrumentId::new(Exchange::Nse, "tatasteel");
+    let steel = InstrumentId::try_new(Exchange::Nse, "tatasteel").unwrap();
     let limit = catalog.slicing_limit(&steel).unwrap();
     assert_eq!(limit.freeze_quantity, 5000);
 
-    let gold = InstrumentId::new(Exchange::Mcx, "GOLD");
+    let gold = InstrumentId::try_new(Exchange::Mcx, "GOLD").unwrap();
     let limit = catalog.slicing_limit(&gold).unwrap();
     assert_eq!(limit.freeze_quantity, 500);
     assert_eq!(limit.lot_size, Some(10));
@@ -142,7 +136,7 @@ fn bundled_index_constants_match_the_sebi_plan() {
         ("MIDCPNIFTY", 1800, Some(75)),
     ] {
         let limit = catalog
-            .slicing_limit(&InstrumentId::new(Exchange::Nse, symbol))
+            .slicing_limit(&InstrumentId::try_new(Exchange::Nse, symbol).unwrap())
             .unwrap_or_else(|| panic!("{symbol} lookup"));
         assert_eq!(limit.freeze_quantity, freeze, "{symbol} freeze");
         assert_eq!(limit.lot_size, lot, "{symbol} lot");
@@ -159,14 +153,14 @@ fn default_freeze_applies_when_no_record_matches() {
     // Known instrument → record limit; unknown → default.
     assert_eq!(
         catalog
-            .slicing_limit(&InstrumentId::new(Exchange::Nse, "NIFTY"))
+            .slicing_limit(&InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap())
             .unwrap()
             .freeze_quantity,
         1800
     );
     assert_eq!(
         catalog
-            .slicing_limit(&InstrumentId::new(Exchange::Mcx, "SILVERMIC"))
+            .slicing_limit(&InstrumentId::try_new(Exchange::Mcx, "SILVERMIC").unwrap())
             .unwrap()
             .freeze_quantity,
         1200
@@ -175,7 +169,7 @@ fn default_freeze_applies_when_no_record_matches() {
     // Empty default config → unsliced pass-through marker (None).
     let bare = FreezeLimitCatalog::new();
     assert!(
-        bare.slicing_limit(&InstrumentId::new(Exchange::Nse, "SILVERMIC"))
+        bare.slicing_limit(&InstrumentId::try_new(Exchange::Nse, "SILVERMIC").unwrap())
             .is_none()
     );
 }

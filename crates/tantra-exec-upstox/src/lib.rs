@@ -109,7 +109,7 @@ impl UpstoxExecutor {
         req: &OrderRequest,
         product: ProductType,
     ) -> Result<UpstoxOrderPayload, BrokerError> {
-        let quantity_int = quantity_to_u32_exact(req.quantity.0)?;
+        let quantity_int = quantity_to_u32_exact(req.quantity.value())?;
 
         let (order_type, price, trigger_price) = match req.order_type {
             OrderType::Market => ("MARKET", None, None),
@@ -129,20 +129,24 @@ impl UpstoxExecutor {
             TimeInForce::Gtc => "DAY",
         };
 
-        let instrument_token = req.instrument.token.clone().unwrap_or_else(|| {
-            format!(
-                "{}|{}",
-                upstox_exchange_segment(req.instrument.exchange),
-                req.instrument.symbol
-            )
-        });
+        let instrument_token = req
+            .instrument
+            .token()
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                format!(
+                    "{}|{}",
+                    upstox_exchange_segment(req.instrument.exchange()),
+                    req.instrument.symbol()
+                )
+            });
 
         Ok(UpstoxOrderPayload {
             quantity: quantity_int,
             product: product.upstox().to_string(),
             validity: validity.to_string(),
             price: match price {
-                Some(p) => Some(format_fixed_exact(p.0, 2)?),
+                Some(p) => Some(format_fixed_exact(p.value(), 2)?),
                 None => None,
             },
             tag: Some(req.algo_id.clone()),
@@ -151,7 +155,7 @@ impl UpstoxExecutor {
             transaction_type: transaction_type.to_string(),
             disclosed_quantity: 0,
             trigger_price: match trigger_price {
-                Some(t) => Some(format_fixed_exact(t.0, 2)?),
+                Some(t) => Some(format_fixed_exact(t.value(), 2)?),
                 None => None,
             },
             is_amo: false,
@@ -370,7 +374,7 @@ fn instrument_of(
     token: Option<&str>,
     tradingsymbol: Option<&str>,
     isin: Option<&str>,
-) -> InstrumentId {
+) -> Result<InstrumentId, BrokerError> {
     let exchange = mapping::exchange(
         token
             .unwrap_or_default()
@@ -379,7 +383,16 @@ fn instrument_of(
             .filter(|seg| !seg.is_empty())
             .unwrap_or_else(|| exchange_text.unwrap_or_default()),
     );
-    InstrumentId::new(exchange, canonical_symbol(tradingsymbol, isin))
+    let mut symbol = canonical_symbol(tradingsymbol, isin);
+    if symbol.is_empty()
+        && let Some(fallback) = token
+            .and_then(|t| t.split('|').next_back())
+            .filter(|seg| !seg.is_empty())
+    {
+        symbol = fallback.to_uppercase();
+    }
+    InstrumentId::try_new(exchange, symbol)
+        .map_err(|e| BrokerError::Transport(format!("invalid upstox instrument: {e}")))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -536,8 +549,8 @@ impl BrokerExecutor for UpstoxExecutor {
         let payload = UpstoxOrderPayload {
             quantity: quantity_to_u32_exact(
                 new_quantity
-                    .map(|q| q.0)
-                    .unwrap_or_else(|| quantity_field(&current.quantity).0),
+                    .map(|q| q.value())
+                    .unwrap_or_else(|| quantity_field(&current.quantity).value()),
             )?,
             product: current
                 .product
@@ -545,7 +558,7 @@ impl BrokerExecutor for UpstoxExecutor {
                 .unwrap_or_else(|| self.product.upstox().to_string()),
             validity: "DAY".to_string(),
             price: Some(match new_price {
-                Some(p) => format_fixed_exact(p.0, 2)?,
+                Some(p) => format_fixed_exact(p.value(), 2)?,
                 None => current
                     .price
                     .as_ref()
@@ -597,41 +610,50 @@ impl BrokerExecutor for UpstoxExecutor {
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         let value = self.get_upstox("/order/book").await?;
         let orders: Vec<UpstoxOrderWire> = Self::upstox_data(value)?;
-        Ok(orders
+        orders
             .into_iter()
-            .map(|o| OrderSnapshot {
-                order_id: o.order_id.clone(),
-                client_order_id: o.tag.as_ref().map(|_| uuid::Uuid::nil()),
-                exchange_order_id: o.exchange_order_id.clone(),
-                instrument: instrument_of(
+            .map(|o| {
+                let instrument = instrument_of(
                     o.exchange.as_deref(),
                     o.instrument_token.as_deref(),
                     o.tradingsymbol.as_deref(),
                     o.instrument_isin.as_deref(),
-                ),
-                side: side_of(&o),
-                order_type: order_type_of(&o),
-                quantity: quantity_field(&o.quantity),
-                filled_quantity: quantity_field(&o.filled_quantity),
-                price: o.price.as_ref().and_then(wire::price_from_json),
-                trigger_price: o.trigger_price.as_ref().and_then(wire::price_from_json),
-                status: status_of(&o),
-                product: o.product.as_deref().and_then(ProductType::from_upstox),
-                timestamp: o
-                    .exchange_timestamp
-                    .as_deref()
-                    .and_then(wire::parse_broker_ist_datetime)
-                    .unwrap_or_else(Utc::now),
+                )?;
+                Ok(OrderSnapshot {
+                    order_id: o.order_id.clone(),
+                    client_order_id: o.tag.as_ref().map(|_| uuid::Uuid::nil()),
+                    exchange_order_id: o.exchange_order_id.clone(),
+                    instrument,
+                    side: side_of(&o),
+                    order_type: order_type_of(&o),
+                    quantity: quantity_field(&o.quantity),
+                    filled_quantity: quantity_field(&o.filled_quantity),
+                    price: o.price.as_ref().and_then(wire::price_from_json),
+                    trigger_price: o.trigger_price.as_ref().and_then(wire::price_from_json),
+                    status: status_of(&o),
+                    product: o.product.as_deref().and_then(ProductType::from_upstox),
+                    timestamp: o
+                        .exchange_timestamp
+                        .as_deref()
+                        .and_then(wire::parse_broker_ist_datetime)
+                        .unwrap_or_else(Utc::now),
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn fetch_positions(&self) -> Result<Vec<BrokerPosition>, BrokerError> {
         let value = self.get_upstox("/portfolio/short-term-positions").await?;
         let positions: Vec<UpstoxPositionWire> = Self::upstox_data(value)?;
-        Ok(positions
+        positions
             .into_iter()
             .map(|p| {
+                let instrument = instrument_of(
+                    None,
+                    p.instrument_token.as_deref(),
+                    p.tradingsymbol.as_deref(),
+                    p.isin.as_deref(),
+                )?;
                 let qty = p
                     .quantity
                     .as_ref()
@@ -644,20 +666,15 @@ impl BrokerExecutor for UpstoxExecutor {
                 } else {
                     PositionSide::Long
                 };
-                BrokerPosition {
-                    instrument: instrument_of(
-                        None,
-                        p.instrument_token.as_deref(),
-                        p.tradingsymbol.as_deref(),
-                        p.isin.as_deref(),
-                    ),
+                Ok(BrokerPosition {
+                    instrument,
                     product: p
                         .product
                         .as_deref()
                         .and_then(ProductType::from_upstox)
                         .unwrap_or(self.product),
                     side,
-                    quantity: Quantity::new(qty.abs()),
+                    quantity: Quantity::try_new(qty.abs()).unwrap_or(Quantity::ZERO),
                     average_price: p
                         .net_price
                         .as_ref()
@@ -669,9 +686,9 @@ impl BrokerExecutor for UpstoxExecutor {
                         .and_then(wire::decimal_from_json)
                         .map(Money::inr),
                     last_price: p.last_price.as_ref().and_then(wire::price_from_json),
-                }
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn fetch_margins(&self) -> Result<BrokerMargins, BrokerError> {

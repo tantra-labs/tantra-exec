@@ -170,7 +170,7 @@ impl PaperExchange {
         let instrument = order.instrument.clone();
 
         // Validation: quantity must be strictly positive.
-        if order.quantity.0 <= Decimal::ZERO {
+        if order.quantity.value() <= Decimal::ZERO {
             self.order_seq += 1;
             let order_seq = self.order_seq;
             let id = format!("PAPER-{order_seq:04}");
@@ -273,8 +273,8 @@ impl PaperExchange {
                 let last = self.last_prices.get(&instrument).copied();
                 match (order.order_type.trigger_price(), last) {
                     (Some(trigger), Some(last)) => match order.side {
-                        OrderSide::Buy => last.0 >= trigger.0,
-                        OrderSide::Sell => last.0 <= trigger.0,
+                        OrderSide::Buy => last.value() >= trigger.value(),
+                        OrderSide::Sell => last.value() <= trigger.value(),
                     },
                     _ => false,
                 }
@@ -353,7 +353,7 @@ impl PaperExchange {
                     working.state,
                     OrderState::New | OrderState::Working | OrderState::PartiallyFilled
                 ),
-                working.filled_qty.0,
+                working.filled_qty.value(),
             )
         };
         if !active {
@@ -372,7 +372,9 @@ impl PaperExchange {
             }
             if let Some(qty) = new_qty {
                 working.original_qty = qty;
-                working.remaining_qty = Quantity::new((qty.0 - filled_qty).max(Decimal::ZERO));
+                working.remaining_qty =
+                    Quantity::try_new((qty.value() - filled_qty).max(Decimal::ZERO))
+                        .unwrap_or(Quantity::ZERO);
             }
         }
         self.match_order(broker_order_id, now);
@@ -387,7 +389,7 @@ impl PaperExchange {
     /// seed the participation cap with the bar's traded volume, then match.
     pub fn feed_bar(&mut self, bar: &Bar) {
         let instrument = bar.instrument.clone();
-        let volume = bar.volume.0.to_i64().unwrap_or(0);
+        let volume = bar.volume.value().to_i64().unwrap_or(0);
         {
             let book = self
                 .books
@@ -415,7 +417,7 @@ impl PaperExchange {
                 .or_insert_with(|| book::OrderBook::new(0, Decimal::ONE));
             match tick {
                 Tick::Ltp { price, volume, .. } => {
-                    book.add_order(*price, volume.0.to_i64().unwrap_or(0));
+                    book.add_order(*price, volume.value().to_i64().unwrap_or(0));
                 }
                 Tick::Quote {
                     bid,
@@ -425,11 +427,11 @@ impl PaperExchange {
                     last_price,
                     ..
                 } => {
-                    if bid.0 > Decimal::ZERO && ask.0 > Decimal::ZERO {
-                        book.add_bid(*bid, bid_qty.0.to_i64().unwrap_or(0));
-                        book.add_ask(*ask, ask_qty.0.to_i64().unwrap_or(0));
+                    if bid.value() > Decimal::ZERO && ask.value() > Decimal::ZERO {
+                        book.add_bid(*bid, bid_qty.value().to_i64().unwrap_or(0));
+                        book.add_ask(*ask, ask_qty.value().to_i64().unwrap_or(0));
                     } else if let Some(last) = last_price {
-                        let qty = bid_qty.0.max(ask_qty.0).to_i64().unwrap_or(0);
+                        let qty = bid_qty.value().max(ask_qty.value()).to_i64().unwrap_or(0);
                         book.add_order(*last, qty);
                     }
                 }
@@ -469,8 +471,8 @@ impl PaperExchange {
                             .last_prices
                             .get(instrument)
                             .map(|last| match working.side {
-                                OrderSide::Buy => last.0 >= trigger.0,
-                                OrderSide::Sell => last.0 <= trigger.0,
+                                OrderSide::Buy => last.value() >= trigger.value(),
+                                OrderSide::Sell => last.value() <= trigger.value(),
                             })
                             .unwrap_or(false),
                         None => false,
@@ -579,7 +581,7 @@ impl PaperExchange {
                 let last = self
                     .last_prices
                     .get(inst)
-                    .map(|p| p.0)
+                    .map(|p| p.value())
                     .unwrap_or(Decimal::ZERO);
                 acc + qty * last
             });
@@ -670,8 +672,8 @@ impl PaperExchange {
 
         for (contra_price, _, contra_id) in contra {
             if let Some(limit_price) = limit {
-                if (side == OrderSide::Buy && contra_price.0 > limit_price.0)
-                    || (side == OrderSide::Sell && contra_price.0 < limit_price.0)
+                if (side == OrderSide::Buy && contra_price.value() > limit_price.value())
+                    || (side == OrderSide::Sell && contra_price.value() < limit_price.value())
                 {
                     break;
                 }
@@ -694,7 +696,10 @@ impl PaperExchange {
                 ) {
                     continue;
                 }
-                let take = working.remaining_qty.0.min(participant.remaining_qty.0);
+                let take = working
+                    .remaining_qty
+                    .value()
+                    .min(participant.remaining_qty.value());
                 if take <= Decimal::ZERO {
                     continue;
                 }
@@ -703,7 +708,7 @@ impl PaperExchange {
             self.apply_participant_fill(
                 order_id,
                 &contra_id,
-                Quantity::new(take),
+                Quantity::try_new(take).unwrap_or(Quantity::ZERO),
                 contra_price,
                 now,
             );
@@ -721,7 +726,7 @@ impl PaperExchange {
         let remaining = self
             .orders
             .get(order_id)
-            .map(|o| o.remaining_qty.0)
+            .map(|o| o.remaining_qty.value())
             .unwrap_or(Decimal::ZERO);
         if remaining > Decimal::ZERO {
             let remaining_i64 = remaining.to_i64().unwrap_or(0);
@@ -757,19 +762,23 @@ impl PaperExchange {
                     if let (Some(adverse), Some(levels)) =
                         (self.adverse_fill.as_ref(), contra_levels.as_ref())
                     {
-                        let (_, worst) =
-                            adverse.compute_fill_slippage(side, filled_i64, levels, fill_price.0);
+                        let (_, worst) = adverse.compute_fill_slippage(
+                            side,
+                            filled_i64,
+                            levels,
+                            fill_price.value(),
+                        );
                         if let Some(worst) = worst {
                             fill_price = worst;
                         }
                     }
                     let filled_qty = Decimal::from(filled_i64);
-                    let notional = fill_price.0 * filled_qty;
+                    let notional = fill_price.value() * filled_qty;
                     let fee = self.cost_fn.compute(side, notional);
                     self.apply_account(&instrument, side, notional, filled_qty, fee);
                     self.update_order_fill(
                         order_id,
-                        Quantity::new(filled_qty),
+                        Quantity::try_new(filled_qty).unwrap_or(Quantity::ZERO),
                         fill_price,
                         fee,
                         now,
@@ -782,7 +791,7 @@ impl PaperExchange {
         let (remaining, filled) = self
             .orders
             .get(order_id)
-            .map(|o| (o.remaining_qty.0, o.filled_qty.0))
+            .map(|o| (o.remaining_qty.value(), o.filled_qty.value()))
             .unwrap_or((Decimal::ZERO, Decimal::ZERO));
         if remaining > Decimal::ZERO {
             if tif == TimeInForce::Ioc {
@@ -812,7 +821,7 @@ impl PaperExchange {
         price: Price,
         now: DateTime<Utc>,
     ) {
-        let notional = price.0 * take.0;
+        let notional = price.value() * take.value();
         let (aggressor_side, participant_side, instrument) = {
             let aggressor = match self.orders.get(aggressor_id) {
                 Some(o) => o,
@@ -830,12 +839,18 @@ impl PaperExchange {
         };
         let aggressor_fee = self.cost_fn.compute(aggressor_side, notional);
         let participant_fee = self.cost_fn.compute(participant_side, notional);
-        self.apply_account(&instrument, aggressor_side, notional, take.0, aggressor_fee);
+        self.apply_account(
+            &instrument,
+            aggressor_side,
+            notional,
+            take.value(),
+            aggressor_fee,
+        );
         self.apply_account(
             &instrument,
             participant_side,
             notional,
-            take.0,
+            take.value(),
             participant_fee,
         );
         self.update_order_fill(aggressor_id, take, price, aggressor_fee, now);
@@ -858,17 +873,20 @@ impl PaperExchange {
                 Some(o) => o,
                 None => return,
             };
-            let filled_before = working.filled_qty.0;
-            let new_filled = filled_before + take.0;
-            let new_remaining = working.remaining_qty.0 - take.0;
+            let filled_before = working.filled_qty.value();
+            let new_filled = filled_before + take.value();
+            let new_remaining = working.remaining_qty.value() - take.value();
             let avg = if new_filled > Decimal::ZERO {
-                ((working.avg_fill_price.0 * filled_before) + (price.0 * take.0)) / new_filled
+                ((working.avg_fill_price.value() * filled_before) + (price.value() * take.value()))
+                    / new_filled
             } else {
-                working.avg_fill_price.0
+                working.avg_fill_price.value()
             };
-            working.filled_qty = Quantity::new(new_filled);
-            working.remaining_qty = Quantity::new(new_remaining.max(Decimal::ZERO));
-            working.avg_fill_price = Price::new(avg.round_dp(4));
+            working.filled_qty = Quantity::try_new(new_filled).unwrap_or(working.filled_qty);
+            working.remaining_qty =
+                Quantity::try_new(new_remaining.max(Decimal::ZERO)).unwrap_or(Quantity::ZERO);
+            working.avg_fill_price =
+                Price::try_new(avg.round_dp(4)).unwrap_or(working.avg_fill_price);
             let is_filled = new_remaining <= Decimal::ZERO;
             working.state = if is_filled {
                 OrderState::Filled

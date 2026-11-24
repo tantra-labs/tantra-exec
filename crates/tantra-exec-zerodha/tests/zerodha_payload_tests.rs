@@ -7,7 +7,7 @@ use tantra_exec_zerodha::ZerodhaExecutor;
 
 #[test]
 fn payload_construction_is_exact_decimal() {
-    let inst = InstrumentId::new(Exchange::Nse, "RELIANCE");
+    let inst = InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap();
     let req = OrderRequest::new(
         inst,
         OrderSide::Buy,
@@ -31,7 +31,7 @@ fn payload_construction_is_exact_decimal() {
 #[test]
 fn payload_products_map_all_taxonomy_variants() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "TCS"),
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
         OrderSide::Sell,
         OrderType::Market,
         Quantity::from_u64(1),
@@ -52,10 +52,10 @@ fn payload_products_map_all_taxonomy_variants() {
 fn payload_rejects_fractional_and_misaligned_values() {
     // Fractional quantity
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "TCS"),
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
-        Quantity::new(rust_decimal::Decimal::from_str_exact("10.5").unwrap()),
+        Quantity::try_new(rust_decimal::Decimal::from_str_exact("10.5").unwrap()).unwrap(),
         "algo-x",
     );
     let err = ZerodhaExecutor::build_order_payload(&req, ProductType::MisIntraday).unwrap_err();
@@ -63,7 +63,7 @@ fn payload_rejects_fractional_and_misaligned_values() {
 
     // Tick-misaligned limit price must be refused, never rounded silently.
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "TCS"),
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("2500.517").unwrap()),
         Quantity::from_u64(10),
@@ -76,7 +76,7 @@ fn payload_rejects_fractional_and_misaligned_values() {
 #[test]
 fn stop_limit_payload_carries_both_prices() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Sell,
         OrderType::StopLimit {
             trigger: Price::from_rupees("1500").unwrap(),

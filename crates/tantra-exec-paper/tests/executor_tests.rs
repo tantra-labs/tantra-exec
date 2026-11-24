@@ -10,7 +10,7 @@ use tantra_exec_paper::{PaperExchange, PaperExchangeExecutor};
 use uuid::Uuid;
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "RELIANCE")
+    InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap()
 }
 
 fn order(side: OrderSide, otype: OrderType, qty: u64, n: u128) -> OrderRequest {
@@ -30,11 +30,11 @@ fn seeded_exchange() -> PaperExchange {
     let t = Utc::now();
     ex.feed_tick(&Tick::Quote {
         instrument: inst(),
-        bid: Price::new(dec!(100)),
-        ask: Price::new(dec!(105)),
+        bid: Price::try_new(dec!(100)).unwrap(),
+        ask: Price::try_new(dec!(105)).unwrap(),
         bid_qty: Quantity::from_u64(50),
         ask_qty: Quantity::from_u64(50),
-        last_price: Some(Price::new(dec!(100))),
+        last_price: Some(Price::try_new(dec!(100)).unwrap()),
         exchange_ts: t,
         receive_ts: t,
         band: None,
@@ -86,7 +86,7 @@ async fn cancel_path_and_terminal_errors() {
     // A resting buy limit: New while working.
     let req = order(
         OrderSide::Buy,
-        OrderType::Limit(Price::new(dec!(90))),
+        OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
         10,
         8,
     );
@@ -123,14 +123,14 @@ async fn modify_order_updates_and_acknowledges() {
     let exec = PaperExchangeExecutor::new(PaperExchange::new(dec!(1_000_000)));
     let req = order(
         OrderSide::Buy,
-        OrderType::Limit(Price::new(dec!(90))),
+        OrderType::Limit(Price::try_new(dec!(90)).unwrap()),
         10,
         9,
     );
     let ack = exec.place_order(req.clone()).await.unwrap();
 
     let amended = exec
-        .modify_order(&ack.order_id, Some(Price::new(dec!(95))), None)
+        .modify_order(&ack.order_id, Some(Price::try_new(dec!(95)).unwrap()), None)
         .await
         .unwrap();
     assert_eq!(amended.order_id, ack.order_id);
@@ -140,6 +140,6 @@ async fn modify_order_updates_and_acknowledges() {
     // The exchange order book reflects the amended limit price.
     let book = exec.fetch_order_book().await.unwrap();
     assert_eq!(book.len(), 1);
-    assert_eq!(book[0].price, Some(Price::new(dec!(95))));
+    assert_eq!(book[0].price, Some(Price::try_new(dec!(95)).unwrap()));
     assert_eq!(book[0].status, OrderStatus::New);
 }

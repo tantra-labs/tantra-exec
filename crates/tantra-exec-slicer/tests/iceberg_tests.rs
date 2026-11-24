@@ -70,15 +70,15 @@ async fn synthetic_runner_advances_leg_by_leg_on_fill_confirmation() {
 
     assert_eq!(outcome.filled_legs, ["L1", "L2", "L3"]);
     assert!(outcome.unfinished_legs.is_empty());
-    assert_eq!(outcome.filled.0.to_string(), "700");
+    assert_eq!(outcome.filled.value().to_string(), "700");
 
     // Leg isolation: exactly one child of display quantity at a time.
     let placed = broker.placed();
     assert_eq!(placed.len(), 3);
-    assert_eq!(placed[0].quantity.0.to_string(), "250");
-    assert_eq!(placed[1].quantity.0.to_string(), "250");
+    assert_eq!(placed[0].quantity.value().to_string(), "250");
+    assert_eq!(placed[1].quantity.value().to_string(), "250");
     assert_eq!(
-        placed[2].quantity.0.to_string(),
+        placed[2].quantity.value().to_string(),
         "200",
         "remainder leg smaller"
     );
@@ -112,7 +112,7 @@ async fn synthetic_runner_records_unfinished_legs_and_continues() {
     assert_eq!(outcome.filled_legs, ["L1"]);
     assert_eq!(outcome.unfinished_legs, ["L2"]);
     assert_eq!(
-        outcome.filled.0.to_string(),
+        outcome.filled.value().to_string(),
         "300",
         "L2 contributed nothing"
     );
@@ -170,7 +170,7 @@ async fn synthetic_runner_counts_fills_on_abandoned_legs() {
     assert_eq!(outcome.filled_legs, ["L2"]);
     assert_eq!(outcome.unfinished_legs, ["L1"]);
     assert_eq!(
-        outcome.filled.0.to_string(),
+        outcome.filled.value().to_string(),
         "550",
         "250 abandoned-leg fill + 300"
     );

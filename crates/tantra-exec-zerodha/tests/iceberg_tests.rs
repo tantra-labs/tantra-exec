@@ -27,7 +27,7 @@ async fn spawn_mock(app: Router) -> String {
 
 fn nifty_parent() -> OrderRequest {
     OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "NIFTY"),
+        InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("24850.05").unwrap()),
         Quantity::from_u64(1000),

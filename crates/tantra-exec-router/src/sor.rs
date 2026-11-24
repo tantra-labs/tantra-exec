@@ -227,7 +227,7 @@ impl ResilientRouter {
         let notional = req
             .order_type
             .limit_price()
-            .map(|price: Price| price.0 * req.quantity.0)
+            .map(|price: Price| price.value() * req.quantity.value())
             .unwrap_or(Decimal::ZERO);
         let mut eligible: Vec<Arc<BrokerRegistration>> = registered
             .iter()

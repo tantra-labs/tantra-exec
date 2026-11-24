@@ -40,7 +40,7 @@ impl ExecRouter {
 
     /// Calculate exact notional from typed Price and Quantity.
     pub fn notional_exact(&self, p: Price, q: Quantity) -> Decimal {
-        p.0 * q.0
+        p.value() * q.value()
     }
 }
 

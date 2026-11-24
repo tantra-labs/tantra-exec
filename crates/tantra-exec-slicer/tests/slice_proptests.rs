@@ -23,7 +23,7 @@ proptest! {
 
         let mut total = 0u64;
         for (index, leg) in plan.legs.iter().enumerate() {
-            let child = leg.quantity.0.to_string().parse::<u64>().unwrap();
+            let child = leg.quantity.value().to_string().parse::<u64>().unwrap();
             prop_assert!(child <= freeze, "leg {index} {child} breaches {freeze}");
             prop_assert_eq!(leg.index as usize, index);
             total += child;
@@ -36,6 +36,6 @@ proptest! {
         let parent = parent_request(quantity);
         let plan = plan_against_limit(&parent, None).unwrap();
         prop_assert_eq!(plan.legs.len(), 1);
-        prop_assert_eq!(plan.legs[0].quantity.0.to_string(), quantity.to_string());
+        prop_assert_eq!(plan.legs[0].quantity.value().to_string(), quantity.to_string());
     }
 }

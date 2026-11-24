@@ -52,7 +52,7 @@ async fn conformance_order_placement_200_ok() {
 
     let tc = TraceContext::new([3u8; 16], [4u8; 8], TraceContext::SAMPLED);
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("1450.50").unwrap()),
         Quantity::from_u64(100),
@@ -86,7 +86,7 @@ async fn conformance_validation_refusal_400() {
     let executor = UpstoxExecutor::with_base_url("test-key", "test-token", base_url);
 
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("1450.50").unwrap()),
         Quantity::from_u64(100),
@@ -117,7 +117,7 @@ async fn conformance_rate_limit_429() {
     let executor = UpstoxExecutor::with_base_url("test-key", "test-token", base_url);
 
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
         Quantity::from_u64(10),
@@ -148,7 +148,7 @@ async fn conformance_server_downtime_503() {
     let executor = UpstoxExecutor::with_base_url("test-key", "test-token", base_url);
 
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
         Quantity::from_u64(10),
@@ -176,8 +176,8 @@ async fn conformance_complete_fill_golden_conversion() {
         BrokerExecutionEvent::Fill(fill) => {
             assert_eq!(fill.order_id, "240221000123456");
             assert_eq!(fill.fill_id, "240221000123456:100");
-            assert_eq!(fill.instrument.symbol, "INFY");
-            assert_eq!(fill.instrument.exchange, Exchange::Nse);
+            assert_eq!(fill.instrument.symbol(), "INFY");
+            assert_eq!(fill.instrument.exchange(), Exchange::Nse);
             assert_eq!(fill.side, OrderSide::Buy);
             assert_eq!(fill.price, Price::from_rupees("1450.50").unwrap());
             assert_eq!(fill.quantity, Quantity::from_u64(100));
@@ -200,8 +200,8 @@ async fn conformance_partial_fill_golden_conversion() {
         BrokerExecutionEvent::Fill(fill) => {
             assert_eq!(fill.order_id, "240221000123457");
             assert_eq!(fill.fill_id, "240221000123457:35");
-            assert_eq!(fill.instrument.symbol, "RELIANCE");
-            assert_eq!(fill.instrument.exchange, Exchange::Nse);
+            assert_eq!(fill.instrument.symbol(), "RELIANCE");
+            assert_eq!(fill.instrument.exchange(), Exchange::Nse);
             assert_eq!(fill.side, OrderSide::Buy);
             assert_eq!(fill.price, Price::from_rupees("2850.75").unwrap());
             assert_eq!(fill.quantity, Quantity::from_u64(35));
@@ -257,8 +257,8 @@ async fn conformance_order_book_snapshot_conversion() {
     let order = &book[0];
     assert_eq!(order.order_id, "240221000123456");
     assert_eq!(order.exchange_order_id, Some("1100000000123456".into()));
-    assert_eq!(order.instrument.symbol, "INFY");
-    assert_eq!(order.instrument.exchange, Exchange::Nse);
+    assert_eq!(order.instrument.symbol(), "INFY");
+    assert_eq!(order.instrument.exchange(), Exchange::Nse);
     assert_eq!(order.side, OrderSide::Buy);
     assert_eq!(order.status, OrderStatus::Filled);
     assert_eq!(order.quantity, Quantity::from_u64(100));

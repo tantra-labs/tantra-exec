@@ -50,10 +50,10 @@ async fn complete_update_emits_full_fill_with_exact_price() {
     match event {
         BrokerExecutionEvent::Fill(fill) => {
             assert_eq!(fill.order_id, "240221000010011");
-            assert_eq!(fill.quantity.0.to_string(), "10");
-            assert_eq!(fill.price.0.to_string(), "37.25");
-            assert_eq!(fill.instrument.exchange, tantra_core::Exchange::Nse);
-            assert_eq!(fill.instrument.symbol, "NHPC");
+            assert_eq!(fill.quantity.value().to_string(), "10");
+            assert_eq!(fill.price.value().to_string(), "37.25");
+            assert_eq!(fill.instrument.exchange(), tantra_core::Exchange::Nse);
+            assert_eq!(fill.instrument.symbol(), "NHPC");
             assert_eq!(fill.algo_id, "algo-m2");
             assert_eq!(
                 fill.timestamp.format("%Y-%m-%dT%H:%M:%S").to_string(),
@@ -105,8 +105,8 @@ async fn open_rejected_cancelled_map_and_deltas_track() {
     for expected in ["2", "3"] {
         match stream.next_event().await.expect("fill") {
             BrokerExecutionEvent::Fill(fill) => {
-                assert_eq!(fill.quantity.0.to_string(), expected);
-                assert_eq!(fill.instrument.exchange, tantra_core::Exchange::Bse);
+                assert_eq!(fill.quantity.value().to_string(), expected);
+                assert_eq!(fill.instrument.exchange(), tantra_core::Exchange::Bse);
             }
             other => panic!("expected fill {expected}, got {other:?}"),
         }

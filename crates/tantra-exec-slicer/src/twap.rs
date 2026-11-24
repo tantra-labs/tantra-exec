@@ -117,7 +117,7 @@ impl TwapPlan {
         start: DateTime<Utc>,
         seed: u64,
     ) -> Result<TwapPlan, BrokerError> {
-        let quantity = quantity_to_u32_exact(parent.quantity.0)? as u64;
+        let quantity = quantity_to_u32_exact(parent.quantity.value())? as u64;
         if cfg.slices == 0 {
             return Err(BrokerError::InvalidRequest(
                 "TWAP requires at least one slice".into(),
@@ -228,7 +228,8 @@ pub async fn run_twap(
 
         let leg_filled =
             await_leg(executor, stream, parent, plan, leg, chase, &mut outcome).await?;
-        outcome.filled = Quantity::new(outcome.filled.0 + leg_filled);
+        outcome.filled =
+            Quantity::try_new(outcome.filled.value() + leg_filled).unwrap_or(outcome.filled);
     }
     Ok(outcome)
 }
@@ -242,12 +243,12 @@ async fn await_leg(
     chase: Option<&TwapChase>,
     outcome: &mut TwapOutcome,
 ) -> Result<Decimal, BrokerError> {
-    let mut remaining = leg.quantity.0;
+    let mut remaining = leg.quantity.value();
     let mut leg_filled = Decimal::ZERO;
     let mut step = 0u32;
     while remaining > Decimal::ZERO {
         let mut child = plan.child_request(parent, leg);
-        child.quantity = Quantity::new(remaining);
+        child.quantity = Quantity::try_new(remaining).unwrap_or(Quantity::ZERO);
         if let Some(clause) = chase
             && let OrderType::Limit(base_price) = parent.order_type
             && step > 0
@@ -290,8 +291,8 @@ async fn await_leg(
             match event {
                 BrokerExecutionEvent::OrderAck(_) => {}
                 BrokerExecutionEvent::Fill(FillReport { quantity, .. }) => {
-                    leg_filled += quantity.0;
-                    remaining -= quantity.0;
+                    leg_filled += quantity.value();
+                    remaining -= quantity.value();
                     if remaining <= Decimal::ZERO {
                         return Ok(leg_filled);
                     }
@@ -331,13 +332,13 @@ fn chased_price(
 ) -> Result<Price, BrokerError> {
     let magnitude = tick * Decimal::from(steps);
     let moved = match side {
-        OrderSide::Buy => base.0 + magnitude,
-        OrderSide::Sell => base.0 - magnitude,
+        OrderSide::Buy => base.value() + magnitude,
+        OrderSide::Sell => base.value() - magnitude,
     };
     if moved <= Decimal::ZERO {
         return Err(BrokerError::InvalidRequest(format!(
             "chase crossed below the cent floor: {moved}"
         )));
     }
-    Ok(Price::new(moved))
+    Price::try_new(moved).map_err(|e| BrokerError::InvalidRequest(e.to_string()))
 }

@@ -16,7 +16,7 @@ fn at(secs: i64) -> DateTime<Utc> {
 }
 
 fn inst() -> InstrumentId {
-    InstrumentId::new(Exchange::Nse, "NIFTY")
+    InstrumentId::try_new(Exchange::Nse, "NIFTY").unwrap()
 }
 
 fn spec_long(entry_qty: u64, targets: Vec<PlannedTarget>) -> BracketOrderSpec {
@@ -64,7 +64,7 @@ proptest! {
             .on_entry_fill(Price::from_rupees("100.00").unwrap(), Quantity::from_u64(100), at(1001))
             .unwrap();
         let resting = tracker.resting_stop().value();
-        let new_stop = Price::new(Decimal::from(new_stop));
+        let new_stop = Price::try_new(Decimal::from(new_stop)).unwrap();
 
         match tracker.modify_stop(new_stop, None, at(1002)) {
             Ok(()) => {
@@ -91,7 +91,7 @@ proptest! {
             .on_entry_fill(Price::from_rupees("100.00").unwrap(), Quantity::from_u64(100), at(1001))
             .unwrap();
         let resting = tracker.resting_stop().value();
-        let new_stop = Price::new(Decimal::from(new_stop));
+        let new_stop = Price::try_new(Decimal::from(new_stop)).unwrap();
 
         match tracker.modify_stop(new_stop, None, at(1002)) {
             Ok(()) => {

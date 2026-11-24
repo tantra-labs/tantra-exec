@@ -118,7 +118,7 @@ fn ticker_status_event(status: &str) -> Option<OrderStatus> {
     crate::mapping::ticker_status_event(status)
 }
 
-fn ticker_instrument(update: &KiteTickerOrderUpdate) -> InstrumentId {
+fn ticker_instrument(update: &KiteTickerOrderUpdate) -> Option<InstrumentId> {
     let exchange = crate::mapping::exchange(
         update
             .exchange
@@ -127,7 +127,7 @@ fn ticker_instrument(update: &KiteTickerOrderUpdate) -> InstrumentId {
             .to_uppercase()
             .as_str(),
     );
-    InstrumentId::new(exchange, update.tradingsymbol.clone().unwrap_or_default())
+    InstrumentId::try_new(exchange, update.tradingsymbol.clone().unwrap_or_default()).ok()
 }
 
 fn ticker_side(update: &KiteTickerOrderUpdate) -> OrderSide {
@@ -155,7 +155,7 @@ fn ticker_price_of(update: &KiteTickerOrderUpdate) -> Price {
         .average_price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero());
+        .filter(|p| !p.value().is_zero());
     if let Some(p) = avg {
         return p;
     }
@@ -163,7 +163,7 @@ fn ticker_price_of(update: &KiteTickerOrderUpdate) -> Price {
         .price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero())
+        .filter(|p| !p.value().is_zero())
         .unwrap_or(Price::ZERO)
 }
 
@@ -240,7 +240,7 @@ impl KiteTickerOrderStream {
                     fill_id: format!("{}:{filled}", update.order_id),
                     order_id: update.order_id.clone(),
                     client_order_id,
-                    instrument: ticker_instrument(&update),
+                    instrument: ticker_instrument(&update)?,
                     side: ticker_side(&update),
                     price: ticker_price_of(&update),
                     quantity: Quantity::from_u64(filled - prev),

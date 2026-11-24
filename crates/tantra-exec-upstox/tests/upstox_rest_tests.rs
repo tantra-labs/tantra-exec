@@ -45,12 +45,9 @@ async fn place_order_posts_exact_json_payload() {
         UpstoxExecutor::with_base_url("k", "tok-1", &base).with_product(ProductType::MisIntraday);
 
     let req = OrderRequest::new(
-        InstrumentId {
-            exchange: Exchange::Nse,
-            symbol: "SBIN".into(),
-            token: Some("NSE_EQ|INE062A00720".into()),
-            isin: None,
-        },
+        InstrumentId::try_new(Exchange::Nse, "SBIN")
+            .unwrap()
+            .with_token("NSE_EQ|INE062A00720"),
         OrderSide::Buy,
         OrderType::StopLimit {
             trigger: Price::from_rupees("1545.5").unwrap(),
@@ -213,9 +210,9 @@ async fn order_book_maps_lowercase_statuses_and_sls() {
 
     assert_eq!(book[0].status, OrderStatus::Filled);
     assert_eq!(book[0].side, OrderSide::Sell);
-    assert_eq!(book[0].instrument.exchange, Exchange::Nse);
-    assert_eq!(book[0].instrument.symbol, "SBIN");
-    assert_eq!(book[0].price.unwrap().0.to_string(), "470.25");
+    assert_eq!(book[0].instrument.exchange(), Exchange::Nse);
+    assert_eq!(book[0].instrument.symbol(), "SBIN");
+    assert_eq!(book[0].price.unwrap().value().to_string(), "470.25");
     assert_eq!(
         book[0].timestamp.format("%Y-%m-%dT%H:%M:%S").to_string(),
         "2024-02-21T09:10:02"
@@ -224,13 +221,13 @@ async fn order_book_maps_lowercase_statuses_and_sls() {
 
     let slm = &book[1];
     assert!(matches!(slm.order_type, OrderType::StopLoss(_)));
-    assert_eq!(slm.instrument.exchange, Exchange::Mcx);
+    assert_eq!(slm.instrument.exchange(), Exchange::Mcx);
     assert_eq!(slm.product, Some(ProductType::MtfMargin));
-    assert_eq!(slm.trigger_price.unwrap().0.to_string(), "51200");
+    assert_eq!(slm.trigger_price.unwrap().value().to_string(), "51200");
 
     let rejected = &book[2];
     assert_eq!(rejected.status, OrderStatus::Rejected);
-    assert_eq!(rejected.instrument.exchange, Exchange::Bse);
+    assert_eq!(rejected.instrument.exchange(), Exchange::Bse);
 }
 
 #[tokio::test]
@@ -269,13 +266,16 @@ async fn positions_map_short_side_and_value_scale() {
     let positions = executor.fetch_positions().await.expect("positions");
 
     assert_eq!(positions[0].side, PositionSide::Short);
-    assert_eq!(positions[0].quantity.0, Decimal::from(2));
-    assert_eq!(positions[0].average_price.0.to_string(), "470.25");
+    assert_eq!(positions[0].quantity.value(), Decimal::from(2));
+    assert_eq!(positions[0].average_price.value().to_string(), "470.25");
     let pnl = positions[0].realized_pnl.unwrap().amount;
     assert_eq!(pnl * Decimal::from(100), Decimal::from(-1050));
-    assert_eq!(positions[0].last_price.unwrap().0.to_string(), "465.5");
+    assert_eq!(
+        positions[0].last_price.unwrap().value().to_string(),
+        "465.5"
+    );
     assert_eq!(positions[1].side, PositionSide::Long);
-    assert_eq!(positions[1].average_price.0.to_string(), "89.85");
+    assert_eq!(positions[1].average_price.value().to_string(), "89.85");
 }
 
 #[tokio::test]

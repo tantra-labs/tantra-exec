@@ -82,11 +82,14 @@ async fn complete_frame_emits_fill_with_exact_fields() {
         BrokerExecutionEvent::Fill(fill) => {
             assert_eq!(fill.fill_id, "110000001:25");
             assert_eq!(fill.order_id, "110000001");
-            assert_eq!(fill.instrument.symbol, "RELIANCE");
-            assert_eq!(fill.instrument.exchange, Exchange::Nse);
+            assert_eq!(fill.instrument.symbol(), "RELIANCE");
+            assert_eq!(fill.instrument.exchange(), Exchange::Nse);
             assert_eq!(fill.side, OrderSide::Buy);
-            assert_eq!(fill.price.0, Price::from_rupees("1450.50").unwrap().0);
-            assert_eq!(fill.quantity.0, rust_decimal::Decimal::from(25));
+            assert_eq!(
+                fill.price.value(),
+                Price::from_rupees("1450.50").unwrap().value()
+            );
+            assert_eq!(fill.quantity.value(), rust_decimal::Decimal::from(25));
             assert_eq!(fill.algo_id, "ALGO-1");
         }
         other => panic!("expected Fill, got {other:?}"),
@@ -105,9 +108,9 @@ async fn partial_then_complete_emits_two_delta_fills() {
     match (first, second) {
         (BrokerExecutionEvent::Fill(first), BrokerExecutionEvent::Fill(second)) => {
             assert_eq!(first.fill_id, "110000001:10");
-            assert_eq!(first.quantity.0, rust_decimal::Decimal::from(10));
+            assert_eq!(first.quantity.value(), rust_decimal::Decimal::from(10));
             assert_eq!(second.fill_id, "110000001:25");
-            assert_eq!(second.quantity.0, rust_decimal::Decimal::from(15));
+            assert_eq!(second.quantity.value(), rust_decimal::Decimal::from(15));
         }
         (a, b) => panic!("expected two fills, got {a:?} and {b:?}"),
     }

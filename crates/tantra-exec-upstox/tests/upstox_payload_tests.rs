@@ -7,7 +7,9 @@ use tantra_exec_upstox::{UpstoxExecutor, UpstoxOrderPayload};
 
 #[test]
 fn payload_uses_exact_decimal_strings_never_f64() {
-    let inst = InstrumentId::new(Exchange::Nse, "TCS").with_token("NSE_EQ|INE467B01029");
+    let inst = InstrumentId::try_new(Exchange::Nse, "TCS")
+        .unwrap()
+        .with_token("NSE_EQ|INE467B01029");
     let req = OrderRequest::new(
         inst,
         OrderSide::Sell,
@@ -36,7 +38,7 @@ fn payload_uses_exact_decimal_strings_never_f64() {
 #[test]
 fn payload_product_taxonomy_full_mapping() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "RELIANCE"),
+        InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
         Quantity::from_u64(1),
@@ -56,7 +58,7 @@ fn payload_product_taxonomy_full_mapping() {
 #[test]
 fn payload_market_order_has_no_price_trigger() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "INFY"),
+        InstrumentId::try_new(Exchange::Nse, "INFY").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
         Quantity::from_u64(10),
@@ -70,7 +72,7 @@ fn payload_market_order_has_no_price_trigger() {
 #[test]
 fn payload_stop_loss_carries_exact_trigger() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "HDFC"),
+        InstrumentId::try_new(Exchange::Nse, "HDFC").unwrap(),
         OrderSide::Sell,
         OrderType::StopLoss(Price::from_rupees("1625.85").unwrap()),
         Quantity::from_u64(3),
@@ -85,10 +87,10 @@ fn payload_stop_loss_carries_exact_trigger() {
 #[test]
 fn payload_rejects_fractional_quantity() {
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "TCS"),
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
         OrderSide::Buy,
         OrderType::Market,
-        Quantity::new(rust_decimal::Decimal::from_str_exact("10.5").unwrap()),
+        Quantity::try_new(rust_decimal::Decimal::from_str_exact("10.5").unwrap()).unwrap(),
         "algo-x",
     );
     let err = UpstoxExecutor::build_order_payload(&req, ProductType::MisIntraday).unwrap_err();
@@ -100,7 +102,7 @@ fn legacy_f64_fields_are_gone() {
     // The struct can no longer contain f64 fields — compile-time guarantee via
     // struct definition, but double-check serde never writes exponent syntax.
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Bse, "SENSEX"),
+        InstrumentId::try_new(Exchange::Bse, "SENSEX").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("79999.95").unwrap()),
         Quantity::from_u64(2),

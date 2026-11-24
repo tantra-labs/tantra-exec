@@ -22,7 +22,7 @@ use tantra_risk::RiskEngine;
 
 fn limit_req(symbol: &str, qty: u64, price: &str) -> OrderRequest {
     OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, symbol),
+        InstrumentId::try_new(Exchange::Nse, symbol).unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees(price).unwrap()),
         Quantity::from_u64(qty),
@@ -254,7 +254,7 @@ async fn channel_execution_stream_round_trip() {
         "FILL-1",
         "ORD-1",
         ack.client_order_id,
-        InstrumentId::new(Exchange::Nse, "TCS"),
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
         OrderSide::Buy,
         Price::from_rupees("3050.00").unwrap(),
         Quantity::from_u64(10),
@@ -614,7 +614,7 @@ impl BrokerExecutor for RecordingBroker {
         self.log.lock().await.push("place");
         self.done_tx.send("place").unwrap();
         Ok(OrderAck::new(
-            req.instrument.symbol.clone(),
+            req.instrument.symbol(),
             req.client_order_id,
             OrderStatus::New,
             chrono::Utc::now(),

@@ -162,15 +162,15 @@ impl FreezeLimitCatalog {
 
     /// Exact record for an instrument (token first, then canonical symbol).
     pub fn record_for(&self, instrument: &InstrumentId) -> Option<&FreezeLimitRecord> {
-        if let Some(&index) = instrument.token.as_deref().and_then(|token| {
+        if let Some(&index) = instrument.token().and_then(|token| {
             self.by_token
-                .get(&(instrument.exchange, token.to_uppercase()))
+                .get(&(instrument.exchange(), token.to_uppercase()))
         }) {
             return self.records.get(index);
         }
-        let symbol = instrument.symbol.trim().to_uppercase();
+        let symbol = instrument.symbol().trim().to_uppercase();
         self.by_symbol
-            .get(&(instrument.exchange, symbol))
+            .get(&(instrument.exchange(), symbol))
             .and_then(|&index| self.records.get(index))
     }
 

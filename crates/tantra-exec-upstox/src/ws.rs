@@ -130,7 +130,7 @@ pub fn parse_portfolio_feed_frame(text: &str) -> Result<Vec<UpstoxFeedUpdate>, B
     }
 }
 
-fn feed_instrument(update: &UpstoxFeedUpdate) -> InstrumentId {
+fn feed_instrument(update: &UpstoxFeedUpdate) -> Option<InstrumentId> {
     let exchange = crate::mapping::exchange(
         update
             .exchange
@@ -146,7 +146,15 @@ fn feed_instrument(update: &UpstoxFeedUpdate) -> InstrumentId {
     let raw = update
         .tradingsymbol
         .as_deref()
-        .or(update.isin.as_deref())
+        .filter(|s| !s.is_empty())
+        .or_else(|| update.isin.as_deref().filter(|s| !s.is_empty()))
+        .or_else(|| {
+            update
+                .instrument_token
+                .as_deref()
+                .and_then(|t| t.split('|').next_back())
+                .filter(|s| !s.is_empty())
+        })
         .unwrap_or_default()
         .to_uppercase();
     let symbol = raw
@@ -154,7 +162,7 @@ fn feed_instrument(update: &UpstoxFeedUpdate) -> InstrumentId {
         .or_else(|| raw.strip_suffix("-BE"))
         .unwrap_or(&raw)
         .to_string();
-    InstrumentId::new(exchange, symbol)
+    InstrumentId::try_new(exchange, symbol).ok()
 }
 
 fn feed_side(update: &UpstoxFeedUpdate) -> OrderSide {
@@ -174,7 +182,7 @@ fn feed_fill_price(update: &UpstoxFeedUpdate) -> Price {
         .average_price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero());
+        .filter(|p| !p.value().is_zero());
     if let Some(p) = avg {
         return p;
     }
@@ -182,7 +190,7 @@ fn feed_fill_price(update: &UpstoxFeedUpdate) -> Price {
         .price
         .as_ref()
         .and_then(wire::price_from_json)
-        .filter(|p| !p.0.is_zero())
+        .filter(|p| !p.value().is_zero())
         .unwrap_or(Price::ZERO)
 }
 
@@ -256,7 +264,7 @@ impl UpstoxOrderStream {
                     fill_id: format!("{order_id}:{filled}"),
                     order_id,
                     client_order_id,
-                    instrument: feed_instrument(&update),
+                    instrument: feed_instrument(&update)?,
                     side: feed_side(&update),
                     price: feed_fill_price(&update),
                     quantity: Quantity::from_u64(filled - prev),

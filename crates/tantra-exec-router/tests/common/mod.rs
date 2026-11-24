@@ -167,7 +167,7 @@ impl BrokerExecutor for MockBroker {
 /// Canonical delivery (CNC) notional-aware parent: 100 shares @ 500.00.
 pub fn delivery_request(qty: u64) -> OrderRequest {
     OrderRequest::new(
-        tantra_core::InstrumentId::new(tantra_core::Exchange::Nse, "TATASTEEL"),
+        tantra_core::InstrumentId::try_new(tantra_core::Exchange::Nse, "TATASTEEL").unwrap(),
         OrderSide::Buy,
         tantra_core::OrderType::Limit(Price::from_rupees("500.00").unwrap()),
         Quantity::from_u64(qty),

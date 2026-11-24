@@ -51,7 +51,7 @@ async fn place_order_posts_exact_form_and_maps_ack() {
         .with_product(ProductType::MisIntraday);
 
     let req = OrderRequest::new(
-        InstrumentId::new(Exchange::Nse, "RELIANCE"),
+        InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap(),
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("2500.5").unwrap()),
         Quantity::from_u64(10),
@@ -178,8 +178,8 @@ async fn order_book_maps_statuses_types_and_ist_time() {
     let complete = &book[0];
     assert_eq!(complete.status, OrderStatus::Filled);
     assert_eq!(complete.side, OrderSide::Sell);
-    assert_eq!(complete.quantity.0, Decimal::from(2));
-    assert_eq!(complete.price.unwrap().0.to_string(), "470.25");
+    assert_eq!(complete.quantity.value(), Decimal::from(2));
+    assert_eq!(complete.price.unwrap().value().to_string(), "470.25");
     assert_eq!(
         complete.timestamp.format("%Y-%m-%dT%H:%M:%S").to_string(),
         "2022-03-03T03:54:25",
@@ -189,8 +189,8 @@ async fn order_book_maps_statuses_types_and_ist_time() {
     let sl = &book[1];
     match sl.order_type {
         OrderType::StopLimit { trigger, limit } => {
-            assert_eq!(trigger.0.to_string(), "1545.50");
-            assert_eq!(limit.0.to_string(), "1550.00");
+            assert_eq!(trigger.value().to_string(), "1545.50");
+            assert_eq!(limit.value().to_string(), "1550.00");
         }
         other => panic!("expected SL leg, got {other:?}"),
     }
@@ -198,7 +198,7 @@ async fn order_book_maps_statuses_types_and_ist_time() {
 
     let slm = &book[2];
     assert!(matches!(slm.order_type, OrderType::StopLoss(_)));
-    assert_eq!(slm.instrument.exchange, Exchange::Mcx);
+    assert_eq!(slm.instrument.exchange(), Exchange::Mcx);
 }
 
 #[tokio::test]
@@ -238,8 +238,8 @@ async fn positions_map_short_side_and_pnl() {
     let positions = executor.fetch_positions().await.expect("positions");
     assert_eq!(positions.len(), 2);
     assert_eq!(positions[0].side, PositionSide::Short);
-    assert_eq!(positions[0].quantity.0, Decimal::from(2));
-    assert_eq!(positions[0].average_price.0.to_string(), "470.25");
+    assert_eq!(positions[0].quantity.value(), Decimal::from(2));
+    assert_eq!(positions[0].average_price.value().to_string(), "470.25");
     let pnl = positions[0].realized_pnl.unwrap().amount;
     assert_eq!(
         pnl * Decimal::from(100),

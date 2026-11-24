@@ -63,11 +63,13 @@ pub fn order_type_token(order_type: &OrderType) -> &'static str {
 fn order_price_legs(order_type: &OrderType) -> Result<(String, String), BrokerError> {
     Ok(match order_type {
         OrderType::Market => ("0.00".to_string(), "0.00".to_string()),
-        OrderType::Limit(price) => (format_fixed_exact(price.0, 2)?, "0.00".to_string()),
-        OrderType::StopLoss(trigger) => ("0.00".to_string(), format_fixed_exact(trigger.0, 2)?),
+        OrderType::Limit(price) => (format_fixed_exact(price.value(), 2)?, "0.00".to_string()),
+        OrderType::StopLoss(trigger) => {
+            ("0.00".to_string(), format_fixed_exact(trigger.value(), 2)?)
+        }
         OrderType::StopLimit { trigger, limit } => (
-            format_fixed_exact(limit.0, 2)?,
-            format_fixed_exact(trigger.0, 2)?,
+            format_fixed_exact(limit.value(), 2)?,
+            format_fixed_exact(trigger.value(), 2)?,
         ),
     })
 }
@@ -78,7 +80,7 @@ fn order_price_legs(order_type: &OrderType) -> Result<(String, String), BrokerEr
 /// and the `symboltoken` falls back to the symbol when no token is attached.
 /// The SEBI algo id rides as `tag` when set.
 pub fn build_order_payload(req: &OrderRequest, product: ProductType) -> Result<Value, BrokerError> {
-    let quantity = quantity_to_u32_exact(req.quantity.0)?;
+    let quantity = quantity_to_u32_exact(req.quantity.value())?;
     let ordertype = order_type_token(&req.order_type);
     let (price, triggerprice) = order_price_legs(&req.order_type)?;
     let transactiontype = match &req.side {
@@ -91,15 +93,15 @@ pub fn build_order_payload(req: &OrderRequest, product: ProductType) -> Result<V
     };
     let symboltoken = req
         .instrument
-        .token
-        .clone()
-        .unwrap_or_else(|| req.instrument.symbol.clone());
+        .token()
+        .map(str::to_string)
+        .unwrap_or_else(|| req.instrument.symbol().to_string());
 
     let mut payload = serde_json::json!({
         "variety": "NORMAL",
-        "tradingsymbol": req.instrument.symbol.clone(),
+        "tradingsymbol": req.instrument.symbol(),
         "symboltoken": symboltoken,
-        "exchange": req.instrument.exchange.as_str(),
+        "exchange": req.instrument.exchange().as_str(),
         "transactiontype": transactiontype,
         "ordertype": ordertype,
         "producttype": product.angelone(),
@@ -167,7 +169,7 @@ fn map_cancel_error(order_id: &str, err: BrokerError) -> BrokerError {
 
 /// Build a canonical [`InstrumentId`] from a REST record's exchange /
 /// tradingsymbol / symboltoken fields.
-fn instrument_from_json(row: &Value) -> InstrumentId {
+fn instrument_from_json(row: &Value) -> Result<InstrumentId, BrokerError> {
     let exchange = mapping::exchange(
         row.get("exchange")
             .and_then(Value::as_str)
@@ -178,11 +180,12 @@ fn instrument_from_json(row: &Value) -> InstrumentId {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_uppercase();
-    let mut instrument = InstrumentId::new(exchange, symbol);
+    let mut instrument = InstrumentId::try_new(exchange, symbol)
+        .map_err(|e| BrokerError::Transport(format!("invalid angelone instrument: {e}")))?;
     if let Some(token) = row.get("symboltoken").and_then(Value::as_str) {
         instrument = instrument.with_token(token.to_string());
     }
-    instrument
+    Ok(instrument)
 }
 
 /// Decode one order-book record into an [`OrderSnapshot`].
@@ -198,7 +201,7 @@ fn parse_order_snapshot(row: &Value) -> Result<OrderSnapshot, BrokerError> {
             .get("exchorderid")
             .and_then(Value::as_str)
             .map(str::to_string),
-        instrument: instrument_from_json(row),
+        instrument: instrument_from_json(row)?,
         side: mapping::order_side(
             row.get("transactiontype")
                 .and_then(Value::as_str)
@@ -509,21 +512,21 @@ impl BrokerExecutor for AngelOneExecutor {
         let product = current.product.unwrap_or(self.default_product);
         let symboltoken = current
             .instrument
-            .token
-            .clone()
-            .unwrap_or_else(|| current.instrument.symbol.clone());
+            .token()
+            .map(str::to_string)
+            .unwrap_or_else(|| current.instrument.symbol().to_string());
 
         let payload = serde_json::json!({
             "variety": "NORMAL",
             "orderid": order_id,
             "ordertype": order_type_token(&current.order_type),
             "producttype": product.angelone(),
-            "quantity": quantity_to_u32_exact(quantity.0)?,
-            "price": format_fixed_exact(price.0, 2)?,
-            "triggerprice": format_fixed_exact(trigger.0, 2)?,
-            "tradingsymbol": current.instrument.symbol.clone(),
+            "quantity": quantity_to_u32_exact(quantity.value())?,
+            "price": format_fixed_exact(price.value(), 2)?,
+            "triggerprice": format_fixed_exact(trigger.value(), 2)?,
+            "tradingsymbol": current.instrument.symbol(),
             "symboltoken": symboltoken,
-            "exchange": current.instrument.exchange.as_str(),
+            "exchange": current.instrument.exchange().as_str(),
             "duration": "DAY",
         });
         let data = self
@@ -564,9 +567,9 @@ impl BrokerExecutor for AngelOneExecutor {
                 BrokerError::Transport("angelone positions data is not an array".into())
             })?
             .as_slice();
-        Ok(rows
-            .iter()
+        rows.iter()
             .map(|row| {
+                let instrument = instrument_from_json(row)?;
                 let quantity = row
                     .get("quantity")
                     .and_then(wire::decimal_from_json)
@@ -578,15 +581,15 @@ impl BrokerExecutor for AngelOneExecutor {
                 } else {
                     PositionSide::Long
                 };
-                BrokerPosition {
-                    instrument: instrument_from_json(row),
+                Ok(BrokerPosition {
+                    instrument,
                     product: row
                         .get("producttype")
                         .and_then(Value::as_str)
                         .and_then(ProductType::from_angelone)
                         .unwrap_or(ProductType::CncDelivery),
                     side,
-                    quantity: Quantity::new(quantity.abs()),
+                    quantity: Quantity::try_new(quantity.abs()).unwrap_or(Quantity::ZERO),
                     average_price: row
                         .get("avgprice")
                         .and_then(wire::price_from_json)
@@ -597,9 +600,9 @@ impl BrokerExecutor for AngelOneExecutor {
                             .unwrap_or(rust_decimal::Decimal::ZERO),
                     )),
                     last_price: row.get("ltp").and_then(wire::price_from_json),
-                }
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn fetch_margins(&self) -> Result<BrokerMargins, BrokerError> {

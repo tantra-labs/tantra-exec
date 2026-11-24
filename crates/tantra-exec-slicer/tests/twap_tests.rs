@@ -41,16 +41,17 @@ fn equal_split_matches_slices_and_freeze_lifts_leg_count() {
     // requested 3 slices.
     let lifted = config(3, Duration::from_secs(30), Duration::from_millis(10));
     let mut parent = parent_request(9000);
-    parent.instrument.symbol = "BANKNIFTY".into();
+    parent.instrument =
+        tantra_core::InstrumentId::try_new(parent.instrument.exchange(), "BANKNIFTY").unwrap();
     let plan = TwapPlan::build(&parent, &lifted, &catalog, start, 7).unwrap();
     assert_eq!(plan.legs.len(), 10, "freeze 900 forces ⌈9000/900⌉ legs");
     for leg in &plan.legs {
         assert!(
-            leg.quantity.0 <= Decimal::from(900),
+            leg.quantity.value() <= Decimal::from(900),
             "freeze invariant {leg:?}"
         );
     }
-    let total: Decimal = plan.legs.iter().map(|leg| leg.quantity.0).sum();
+    let total: Decimal = plan.legs.iter().map(|leg| leg.quantity.value()).sum();
     assert_eq!(total.to_string(), "9000", "legs reconstruct the parent");
 
     // Comfortable split: 600 (≤ 900) across 2 requested slices → 300 + 300.
@@ -68,7 +69,7 @@ fn equal_split_matches_slices_and_freeze_lifts_leg_count() {
         plan_flat
             .legs
             .iter()
-            .all(|leg| leg.quantity.0.to_string() == "300")
+            .all(|leg| leg.quantity.value().to_string() == "300")
     );
 
     // Single slice stays a single slice when the parent already fits.
@@ -101,7 +102,7 @@ fn schedule_is_deterministic_with_bounded_gaussian_jitter() {
         plan_a
             .legs
             .iter()
-            .all(|leg| leg.quantity.0.to_string() == "200")
+            .all(|leg| leg.quantity.value().to_string() == "200")
     );
 
     // Irwin–Hall(3) hard bound: |z| ≤ 3σ (full support), integer div < 1 ms.
@@ -153,14 +154,14 @@ async fn runner_sleeps_to_schedule_and_aggregates_fills() {
         .await
         .unwrap();
     assert_eq!(outcome.placed_legs, ["L1", "L2", "L3"]);
-    assert_eq!(outcome.filled.0.to_string(), "600");
+    assert_eq!(outcome.filled.value().to_string(), "600");
     assert_eq!(outcome.chase_steps, 0);
 
     let placed = broker.placed();
     assert!(
         placed
             .iter()
-            .all(|child| child.quantity.0.to_string() == "200")
+            .all(|child| child.quantity.value().to_string() == "200")
     );
     // Schedule integrity: spacing between placements matches the plan slots.
     for leg in &plan.legs {
@@ -203,23 +204,28 @@ async fn limit_chase_cancels_quiet_child_and_resubmits_at_ticked_price() {
     let outcome = run_twap(&broker, stream.as_mut(), &parent, &plan, Some(&chase))
         .await
         .unwrap();
-    assert_eq!(outcome.filled.0.to_string(), "600");
+    assert_eq!(outcome.filled.value().to_string(), "600");
     assert_eq!(outcome.chase_steps, 1, "one re-price executed");
     assert_eq!(outcome.placed_legs, ["L1", "L2", "L2b"]);
 
     let placed = broker.placed();
     assert_eq!(
-        placed[1].order_type.limit_price().unwrap().0.to_string(),
+        placed[1]
+            .order_type
+            .limit_price()
+            .unwrap()
+            .value()
+            .to_string(),
         "100.00"
     );
     let chased = placed[2].order_type.limit_price().unwrap();
     assert_eq!(
-        chased.0.to_string(),
+        chased.value().to_string(),
         "100.05",
         "buy legs chase upward by exactly one tick"
     );
     // The resubmission carries only the unfilled remainder.
-    assert_eq!(placed[2].quantity.0.to_string(), "300");
+    assert_eq!(placed[2].quantity.value().to_string(), "300");
 }
 
 #[tokio::test]
@@ -250,7 +256,7 @@ async fn chase_budget_exhaustion_parks_unfilled_remainder() {
     let outcome = run_twap(&broker, stream.as_mut(), &parent, &plan, Some(&chase))
         .await
         .unwrap();
-    assert_eq!(outcome.filled.0.to_string(), "0");
+    assert_eq!(outcome.filled.value().to_string(), "0");
     assert_eq!(
         outcome.chase_steps, 1,
         "budget of 1 step; the second cancel ends the leg"
@@ -260,11 +266,16 @@ async fn chase_budget_exhaustion_parks_unfilled_remainder() {
     let placed = broker.placed();
     // Both children price at the base AND the chased limit respectively.
     assert_eq!(
-        placed[0].order_type.limit_price().unwrap().0,
-        Price::from_rupees("100").unwrap().0
+        placed[0].order_type.limit_price().unwrap().value(),
+        Price::from_rupees("100").unwrap().value()
     );
     assert_eq!(
-        placed[1].order_type.limit_price().unwrap().0.to_string(),
+        placed[1]
+            .order_type
+            .limit_price()
+            .unwrap()
+            .value()
+            .to_string(),
         "100.05"
     );
     // The Cancelled acks were broker-scripted (arrived before any quiet

@@ -49,9 +49,9 @@ impl SlicePlan {
     pub fn total_quantity(&self) -> Quantity {
         let mut sum = rust_decimal::Decimal::ZERO;
         for leg in &self.legs {
-            sum += leg.quantity.0;
+            sum += leg.quantity.value();
         }
-        Quantity::new(sum)
+        Quantity::try_new(sum).unwrap_or(Quantity::ZERO)
     }
 
     /// Materialize submission-ready child [`OrderRequest`]s.
@@ -116,7 +116,7 @@ pub fn plan_against_limit(
     parent: &OrderRequest,
     freeze: Option<u64>,
 ) -> Result<SlicePlan, BrokerError> {
-    let quantity = quantity_to_u32_exact(parent.quantity.0)? as u64;
+    let quantity = quantity_to_u32_exact(parent.quantity.value())? as u64;
     let limit = freeze.unwrap_or(u64::MAX).max(1);
     let leg_count = quantity.div_ceil(limit);
     if leg_count > u32::MAX as u64 {
