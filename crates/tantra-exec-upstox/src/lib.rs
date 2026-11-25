@@ -26,6 +26,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 use tantra_core::{
     InstrumentId, Money, OrderAck, OrderRequest, OrderSide, OrderStatus, OrderType, Price,
@@ -35,7 +36,7 @@ use tantra_exec_core::decimal::{format_fixed_exact, quantity_to_u32_exact};
 use tantra_exec_core::wire;
 use tantra_exec_core::{
     BrokerError, BrokerExecutor, BrokerHealth, BrokerMargins, BrokerPosition, BrokerRateCatalog,
-    OrderSnapshot, PositionSide, ProductType, RateLimitedBroker,
+    DecodedOrderTag, OrderSnapshot, OrderTag, PositionSide, ProductType, RateLimitedBroker,
 };
 
 /// Upstox execution adapter.
@@ -84,6 +85,15 @@ impl UpstoxExecutor {
     /// Override the default product taxonomy for orders placed through this adapter.
     pub fn with_product(mut self, product: ProductType) -> Self {
         self.product = product;
+        self
+    }
+
+    /// Override the HTTP request timeout applied to REST calls.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("reqwest client builds without a TLS backend failure");
         self
     }
 
@@ -149,7 +159,7 @@ impl UpstoxExecutor {
                 Some(p) => Some(format_fixed_exact(p.value(), 2)?),
                 None => None,
             },
-            tag: Some(req.algo_id.clone()),
+            tag: Some(OrderTag::from_request(req).wire_tag_full()),
             instrument_token,
             order_type: order_type.to_string(),
             transaction_type: transaction_type.to_string(),
@@ -173,7 +183,7 @@ impl UpstoxExecutor {
         path: &str,
         json_body: Option<Value>,
     ) -> Result<Value, BrokerError> {
-        self.request_upstox_traced(method, path, json_body, None)
+        self.request_upstox_traced(method, path, json_body, None, None)
             .await
     }
 
@@ -185,6 +195,7 @@ impl UpstoxExecutor {
         path: &str,
         json_body: Option<Value>,
         trace_context: Option<&tantra_core::TraceContext>,
+        ambiguous_on_io_err: Option<Uuid>,
     ) -> Result<Value, BrokerError> {
         let span = tracing::info_span!(
             "broker_http_request",
@@ -215,7 +226,7 @@ impl UpstoxExecutor {
             Err(e) => {
                 let duration = started.elapsed();
                 tantra_exec_core::telemetry::record_http_request("upstox", path, 0, duration);
-                return Err(BrokerError::Transport(e.to_string()));
+                return Err(classify_send_error(e, ambiguous_on_io_err));
             }
         };
         let status = res.status().as_u16();
@@ -223,10 +234,13 @@ impl UpstoxExecutor {
         span.record("http.status_code", status);
         tantra_exec_core::telemetry::record_http_request("upstox", path, status, duration);
 
-        let text = res
-            .text()
-            .await
-            .map_err(|e| BrokerError::Transport(format!("failed to read upstox reply: {e}")))?;
+        let text = res.text().await.map_err(|e| match ambiguous_on_io_err {
+            Some(client_order_id) => BrokerError::OutcomeUnknown {
+                client_order_id,
+                message: format!("failed to read upstox reply: {e}"),
+            },
+            None => BrokerError::Transport(format!("failed to read upstox reply: {e}")),
+        })?;
         let value: Value = serde_json::from_str(&text).map_err(|_| {
             BrokerError::Transport(format!("non-JSON upstox reply (HTTP {status})"))
         })?;
@@ -250,6 +264,21 @@ impl UpstoxExecutor {
 
     async fn get_upstox(&self, path: &str) -> Result<Value, BrokerError> {
         self.request_upstox(Method::GET, path, None).await
+    }
+}
+
+fn classify_send_error(e: reqwest::Error, ambiguous_on_io_err: Option<Uuid>) -> BrokerError {
+    if e.is_connect() {
+        BrokerError::Transport(e.to_string())
+    } else if e.is_builder() {
+        BrokerError::InvalidRequest(e.to_string())
+    } else if let Some(client_order_id) = ambiguous_on_io_err {
+        BrokerError::OutcomeUnknown {
+            client_order_id,
+            message: e.to_string(),
+        }
+    } else {
+        BrokerError::Transport(e.to_string())
     }
 }
 
@@ -508,6 +537,7 @@ impl BrokerExecutor for UpstoxExecutor {
                     BrokerError::InvalidRequest(format!("order payload serialize: {e}"))
                 })?),
                 req.trace_context.as_ref(),
+                Some(req.client_order_id),
             )
             .await?;
         let data: OrderIdData = Self::upstox_data(body)?;
@@ -619,10 +649,16 @@ impl BrokerExecutor for UpstoxExecutor {
                     o.tradingsymbol.as_deref(),
                     o.instrument_isin.as_deref(),
                 )?;
+                let client_order_id = o
+                    .tag
+                    .as_deref()
+                    .and_then(DecodedOrderTag::decode)
+                    .and_then(|decoded| decoded.exact_uuid());
                 Ok(OrderSnapshot {
                     order_id: o.order_id.clone(),
-                    client_order_id: o.tag.as_ref().map(|_| uuid::Uuid::nil()),
+                    client_order_id,
                     exchange_order_id: o.exchange_order_id.clone(),
+                    tag: o.tag.clone(),
                     instrument,
                     side: side_of(&o),
                     order_type: order_type_of(&o),

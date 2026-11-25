@@ -1,14 +1,19 @@
 //! Zerodha Kite Connect v3 payload construction tests (exact decimals,
-//! canonical product taxonomy, health-check parsing).
+//! canonical product taxonomy, idempotent wire `OrderTag` encoding, health-check parsing).
+
+use uuid::Uuid;
 
 use tantra_core::{Exchange, InstrumentId, OrderRequest, OrderSide, OrderType, Price, Quantity};
+use tantra_exec_core::tag::{DecodedOrderTag, KITE_TAG_MAX_LEN, OrderTag};
 use tantra_exec_core::{BrokerError, ProductType};
 use tantra_exec_zerodha::ZerodhaExecutor;
 
 #[test]
-fn payload_construction_is_exact_decimal() {
+fn payload_construction_is_exact_decimal_and_carries_idempotent_tag() {
+    let cid = Uuid::parse_str("01234567-89ab-4cde-8123-456789abcdef").unwrap();
     let inst = InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap();
-    let req = OrderRequest::new(
+    let req = OrderRequest::with_id(
+        cid,
         inst,
         OrderSide::Buy,
         OrderType::Limit(Price::from_rupees("2500.5").unwrap()),
@@ -25,7 +30,14 @@ fn payload_construction_is_exact_decimal() {
     assert_eq!(payload.get("price").unwrap(), "2500.50");
     assert_eq!(payload.get("quantity").unwrap(), "10");
     assert_eq!(payload.get("product").unwrap(), "CNC");
-    assert_eq!(payload.get("tag").unwrap(), "algo-alpha");
+
+    // Golden vector: Kite tag is the 20-char Base32 encoding of client_order_id.
+    let expected_tag = OrderTag::from_request(&req).wire_tag_20();
+    assert_eq!(expected_tag, "AERUKZ4JVNGN5AJDIVTQ");
+    let wire_tag = payload.get("tag").unwrap();
+    assert_eq!(wire_tag, &expected_tag);
+    assert!(wire_tag.len() <= KITE_TAG_MAX_LEN);
+    assert!(DecodedOrderTag::decode(wire_tag).unwrap().matches(cid));
 }
 
 #[test]

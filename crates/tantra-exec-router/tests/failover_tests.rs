@@ -1,6 +1,7 @@
-//! M4 automated failover engine tests (plan §3.5 item 5): transparent
-//! re-routing on transport faults, no failover on business rejections, hop
-//! budget, breaker interaction, and stateful modify/cancel ownership.
+//! M4 automated failover engine tests (plan §3.5 item 5 + Gap 0004):
+//! transparent re-routing on transport faults, no failover on business
+//! rejections or unknown outcomes, reconciliation via order book, hop budget,
+//! breaker interaction, and stateful modify/cancel ownership.
 
 use std::sync::Arc;
 
@@ -96,6 +97,115 @@ async fn timeout_is_failover_eligible() {
         .await
         .unwrap();
     assert_eq!(routed.broker, "flat-access", "timeout is failover-eligible");
+}
+
+#[tokio::test]
+async fn outcome_unknown_never_fails_over_or_trips_breaker() {
+    let router = ResilientRouter::new(config());
+    let primary = Arc::new(
+        MockBroker::new("zero-delivery")
+            .push(Script::OutcomeUnknown)
+            .push(Script::OutcomeUnknown)
+            .push(Script::OutcomeUnknown),
+    );
+    router
+        .register(
+            "zero-delivery",
+            primary.clone(),
+            BrokerCostModel::ZeroDelivery {
+                intraday_bps: 10.into(),
+            },
+        )
+        .unwrap();
+    let secondary = Arc::new(MockBroker::new("flat-access"));
+    router
+        .register(
+            "flat-access",
+            secondary.clone(),
+            BrokerCostModel::FlatFee { fee: 50.into() },
+        )
+        .unwrap();
+
+    let now = Utc::now();
+    for _ in 0..3 {
+        let req = delivery_request(1);
+        let cid = req.client_order_id;
+        let err = router
+            .route_order(req, ProductType::CncDelivery, now)
+            .await
+            .unwrap_err();
+        match err {
+            BrokerError::OutcomeUnknown {
+                client_order_id, ..
+            } => assert_eq!(client_order_id, cid),
+            other => panic!("expected OutcomeUnknown without failover, got {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        primary.order_book_queries(),
+        3,
+        "SOR must query find_by_client_order_id on every OutcomeUnknown"
+    );
+    assert!(
+        secondary.placed().is_empty(),
+        "unknown outcome must NEVER fail over to another broker"
+    );
+    assert_eq!(
+        router
+            .broker_states(now)
+            .iter()
+            .find(|state| state.name == "zero-delivery")
+            .unwrap()
+            .circuit,
+        CircuitState::Closed,
+        "ambiguous timeouts must never trip the circuit breaker"
+    );
+}
+
+#[tokio::test]
+async fn outcome_unknown_reconciles_existing_order_from_order_book() {
+    let router = ResilientRouter::new(config());
+    let primary = Arc::new(MockBroker::new("zero-delivery").push(Script::OutcomeUnknownAccepted));
+    router
+        .register(
+            "zero-delivery",
+            primary.clone(),
+            BrokerCostModel::ZeroDelivery {
+                intraday_bps: 10.into(),
+            },
+        )
+        .unwrap();
+    let secondary = Arc::new(MockBroker::new("flat-access"));
+    router
+        .register(
+            "flat-access",
+            secondary.clone(),
+            BrokerCostModel::FlatFee { fee: 50.into() },
+        )
+        .unwrap();
+
+    let req = delivery_request(1);
+    let cid = req.client_order_id;
+    let routed = router
+        .route_order(req, ProductType::CncDelivery, Utc::now())
+        .await
+        .expect("reconciled via order book lookup");
+    assert_eq!(routed.broker, "zero-delivery");
+    assert_eq!(routed.ack.client_order_id, cid);
+    assert_eq!(routed.ack.order_id, "zero-delivery-1");
+    assert_eq!(primary.order_book_queries(), 1);
+    assert!(
+        secondary.placed().is_empty(),
+        "reconciled order must not touch secondary"
+    );
+
+    // Ownership must be recorded so downstream modify/cancel target primary.
+    router
+        .route_cancel(&routed.ack.order_id, Utc::now())
+        .await
+        .expect("cancel routes to reconciled owner");
+    assert_eq!(primary.cancelled(), vec!["zero-delivery-1".to_string()]);
 }
 
 #[tokio::test]

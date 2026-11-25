@@ -13,7 +13,7 @@ This plan makes submission idempotent with an explicit unknown-outcome state, ma
 
 | Gap | Title | Kind | Severity |
 |---|---|---|---|
-| [0004](../gaps/0004-idempotent-submit-and-outcome-unknown.md) | Idempotent submit and unknown-outcome handling | design-flaw | critical |
+| [0004 (closed)](../gaps/README.md#closed-gaps) | Idempotent submit and unknown-outcome handling | design-flaw | closed |
 | [0005](../gaps/0005-durable-order-id-map-and-reconcile.md) | Durable order-id map and reconcile on reconnect | design-flaw | high |
 | [0006](../gaps/0006-slicer-durable-state-and-clock.md) | Slicer durable parent state and injected clock | design-flaw | high |
 | [0007](../gaps/0007-secret-types-redaction-zeroize.md) | Secret types: redaction and zeroize | design-flaw | high |

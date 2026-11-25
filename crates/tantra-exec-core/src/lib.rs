@@ -9,6 +9,7 @@
 //! # Module map
 //! - [`bracket`] — bracket-order (SL / multi-target / trailing-stop) contract & tracker
 //! - [`types`] — [`ProductType`], broker health, order snapshots, positions, margins
+//! - [`tag`] — shared idempotent wire correlation [`OrderTag`] codec & registry
 //! - [`executor`] — [`BrokerExecutor`] trait v2, [`RiskGatedExecutor`], mock adapter
 //! - [`stream`] — [`ExecutionStream`] push trait + channel transport
 //! - [`ratelimit`] — prioritized token bucket + [`RateLimitedBroker`] wrapper
@@ -23,6 +24,7 @@ pub mod executor;
 pub mod ratelimit;
 pub mod sim;
 pub mod stream;
+pub mod tag;
 pub mod telemetry;
 pub mod types;
 pub mod wire;
@@ -45,6 +47,10 @@ pub use ratelimit::{
 pub use sim::SimExecutionPort;
 pub use stream::{
     BrokerExecutionEvent, ChannelExecutionStream, ExecutionEventSink, ExecutionStream,
+};
+pub use tag::{
+    ANGELONE_TAG_MAX_LEN, DecodedOrderTag, KITE_TAG_MAX_LEN, OrderTag, OrderTagRegistry,
+    UPSTOX_TAG_MAX_LEN,
 };
 pub use types::{
     BrokerHealth, BrokerMargins, BrokerPosition, OrderSnapshot, PositionSide, ProductType,

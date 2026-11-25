@@ -33,6 +33,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 use tantra_core::{
     InstrumentId, Money, OrderAck, OrderRequest, OrderSide, OrderStatus, OrderType, Price,
@@ -42,7 +43,8 @@ use tantra_exec_core::decimal::{format_fixed_exact, quantity_to_u32_exact};
 use tantra_exec_core::wire;
 use tantra_exec_core::{
     BrokerError, BrokerExecutor, BrokerHealth, BrokerMargins, BrokerPosition, BrokerRateCatalog,
-    IcebergOrderExecutor, OrderSnapshot, PositionSide, ProductType, RateLimitedBroker,
+    DecodedOrderTag, IcebergOrderExecutor, OrderSnapshot, OrderTag, PositionSide, ProductType,
+    RateLimitedBroker,
 };
 
 /// Zerodha Kite Connect execution adapter.
@@ -91,6 +93,15 @@ impl ZerodhaExecutor {
     /// Override the default product taxonomy for orders placed through this adapter.
     pub fn with_product(mut self, product: ProductType) -> Self {
         self.product = product;
+        self
+    }
+
+    /// Override the HTTP request timeout applied to REST calls.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("reqwest client builds without a TLS backend failure");
         self
     }
 
@@ -158,8 +169,9 @@ impl ZerodhaExecutor {
             TimeInForce::Gtc => "TTL",
         };
         form.insert("validity", validity.to_string());
-        // SEBI algo id travels in the compliance tag.
-        form.insert("tag", req.algo_id.clone());
+        // Carry idempotent 20-char Base32 client_order_id correlation tag within
+        // Kite's 20-character alphanumeric tag limit.
+        form.insert("tag", OrderTag::from_request(req).wire_tag_20());
 
         Ok(form)
     }
@@ -174,7 +186,8 @@ impl ZerodhaExecutor {
         path: &str,
         form: Option<HashMap<&'static str, String>>,
     ) -> Result<Value, BrokerError> {
-        self.request_kite_traced(method, path, form, None).await
+        self.request_kite_traced(method, path, form, None, None)
+            .await
     }
 
     /// Instrumented HTTP dispatch attaching OpenTelemetry span, W3C `traceparent`,
@@ -185,6 +198,7 @@ impl ZerodhaExecutor {
         path: &str,
         form: Option<HashMap<&'static str, String>>,
         trace_context: Option<&tantra_core::TraceContext>,
+        ambiguous_on_io_err: Option<Uuid>,
     ) -> Result<Value, BrokerError> {
         let span = tracing::info_span!(
             "broker_http_request",
@@ -215,7 +229,7 @@ impl ZerodhaExecutor {
             Err(e) => {
                 let duration = started.elapsed();
                 tantra_exec_core::telemetry::record_http_request("zerodha", path, 0, duration);
-                return Err(BrokerError::Transport(e.to_string()));
+                return Err(classify_send_error(e, ambiguous_on_io_err));
             }
         };
         let status = res.status().as_u16();
@@ -223,10 +237,13 @@ impl ZerodhaExecutor {
         span.record("http.status_code", status);
         tantra_exec_core::telemetry::record_http_request("zerodha", path, status, duration);
 
-        let text = res
-            .text()
-            .await
-            .map_err(|e| BrokerError::Transport(format!("failed to read kite reply: {e}")))?;
+        let text = res.text().await.map_err(|e| match ambiguous_on_io_err {
+            Some(client_order_id) => BrokerError::OutcomeUnknown {
+                client_order_id,
+                message: format!("failed to read kite reply: {e}"),
+            },
+            None => BrokerError::Transport(format!("failed to read kite reply: {e}")),
+        })?;
         let value: Value = serde_json::from_str(&text)
             .map_err(|_| BrokerError::Transport(format!("non-JSON kite reply (HTTP {status})")))?;
         if status >= 400 || value.get("status").and_then(Value::as_str) == Some("error") {
@@ -253,6 +270,21 @@ impl ZerodhaExecutor {
 
     async fn get_kite(&self, path: &str) -> Result<Value, BrokerError> {
         self.request_kite(Method::GET, path, None).await
+    }
+}
+
+fn classify_send_error(e: reqwest::Error, ambiguous_on_io_err: Option<Uuid>) -> BrokerError {
+    if e.is_connect() {
+        BrokerError::Transport(e.to_string())
+    } else if e.is_builder() {
+        BrokerError::InvalidRequest(e.to_string())
+    } else if let Some(client_order_id) = ambiguous_on_io_err {
+        BrokerError::OutcomeUnknown {
+            client_order_id,
+            message: e.to_string(),
+        }
+    } else {
+        BrokerError::Transport(e.to_string())
     }
 }
 
@@ -324,6 +356,7 @@ impl BrokerExecutor for ZerodhaExecutor {
                 "/orders/regular",
                 Some(form),
                 req.trace_context.as_ref(),
+                Some(req.client_order_id),
             )
             .await?;
         let data: PlaceOrderData = Self::kite_data(value)?;
@@ -399,10 +432,16 @@ impl BrokerExecutor for ZerodhaExecutor {
                     .filled_quantity
                     .and_then(|v| wire::quantity_from_json(&v))
                     .unwrap_or(Quantity::ZERO);
+                let client_order_id = o
+                    .tag
+                    .as_deref()
+                    .and_then(DecodedOrderTag::decode)
+                    .and_then(|decoded| decoded.exact_uuid());
                 Ok(OrderSnapshot {
                     order_id: o.order_id,
-                    client_order_id: None,
+                    client_order_id,
                     exchange_order_id: o.exchange_order_id,
+                    tag: o.tag,
                     instrument,
                     side: mapping::order_side(&o.transaction_type),
                     order_type: mapping::order_type(
@@ -526,6 +565,7 @@ impl IcebergOrderExecutor for ZerodhaExecutor {
                 "/orders/iceberg",
                 Some(form),
                 parent.trace_context.as_ref(),
+                Some(parent.client_order_id),
             )
             .await?;
         let data: PlaceOrderData = Self::kite_data(value)?;
@@ -577,6 +617,8 @@ struct KiteOrder {
     order_id: String,
     #[serde(default)]
     exchange_order_id: Option<String>,
+    #[serde(default)]
+    tag: Option<String>,
     exchange: String,
     tradingsymbol: String,
     transaction_type: String,

@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 use tantra_core::{InstrumentId, Money, OrderSide, OrderStatus, OrderType, Price, Quantity};
 
+use crate::tag::DecodedOrderTag;
+
 /// Canonical Indian product taxonomy mapped to broker-specific wire tokens.
 ///
 /// SEBI/exchange margining rules vary per product: customers trade equity
@@ -151,10 +153,14 @@ impl BrokerHealth {
 pub struct OrderSnapshot {
     /// Broker-assigned order ID
     pub order_id: String,
-    /// Client correlation ID (when reported by broker)
+    /// Client correlation ID (when recovered losslessly from broker tag or registry)
     pub client_order_id: Option<Uuid>,
     /// Exchange-assigned order ID (when reported by broker)
     pub exchange_order_id: Option<String>,
+    /// Raw wire correlation tag returned by the broker (`tag` / `ordertag`),
+    /// preserved alongside [`Self::client_order_id`] for compact 20-char tag matching.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     /// Traded instrument
     pub instrument: InstrumentId,
     /// Order direction
@@ -175,6 +181,20 @@ pub struct OrderSnapshot {
     pub product: Option<ProductType>,
     /// Snapshot timestamp
     pub timestamp: DateTime<Utc>,
+}
+
+impl OrderSnapshot {
+    /// True when this order snapshot corresponds to `client_order_id`, matching
+    /// either the parsed exact `client_order_id` or the broker wire `tag`.
+    pub fn matches_client_order_id(&self, client_order_id: Uuid) -> bool {
+        if self.client_order_id == Some(client_order_id) {
+            return true;
+        }
+        self.tag
+            .as_deref()
+            .and_then(DecodedOrderTag::decode)
+            .is_some_and(|decoded| decoded.matches(client_order_id))
+    }
 }
 
 /// A net position as reported by the broker (Demat + intraday combined view).

@@ -21,6 +21,8 @@ pub mod ws;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use std::time::Duration;
+use uuid::Uuid;
 
 use tantra_core::{
     InstrumentId, Money, OrderAck, OrderRequest, OrderSide, OrderStatus, OrderType, Price,
@@ -32,7 +34,7 @@ use tantra_exec_core::types::ProductType;
 use tantra_exec_core::wire;
 use tantra_exec_core::{
     BrokerError, BrokerExecutor, BrokerHealth, BrokerMargins, BrokerPosition, BrokerRateCatalog,
-    OrderSnapshot, PositionSide, RateLimitedBroker,
+    DecodedOrderTag, OrderSnapshot, OrderTag, PositionSide, RateLimitedBroker,
 };
 
 /// Default SmartAPI 2.0 REST gateway.
@@ -78,7 +80,8 @@ fn order_price_legs(order_type: &OrderType) -> Result<(String, String), BrokerEr
 ///
 /// Prices and triggers are exact 2-scale decimal strings, quantity is a u32,
 /// and the `symboltoken` falls back to the symbol when no token is attached.
-/// The SEBI algo id rides as `tag` when set.
+/// Every placement carries the idempotent 20-char Base32 correlation `tag`
+/// derived from [`OrderRequest::client_order_id`].
 pub fn build_order_payload(req: &OrderRequest, product: ProductType) -> Result<Value, BrokerError> {
     let quantity = quantity_to_u32_exact(req.quantity.value())?;
     let ordertype = order_type_token(&req.order_type);
@@ -111,9 +114,7 @@ pub fn build_order_payload(req: &OrderRequest, product: ProductType) -> Result<V
         "disclosedquantity": "0",
         "duration": duration,
     });
-    if !req.algo_id.is_empty() {
-        payload["tag"] = Value::String(req.algo_id.clone());
-    }
+    payload["tag"] = Value::String(OrderTag::from_request(req).wire_tag_20());
     Ok(payload)
 }
 
@@ -190,17 +191,27 @@ fn instrument_from_json(row: &Value) -> Result<InstrumentId, BrokerError> {
 
 /// Decode one order-book record into an [`OrderSnapshot`].
 fn parse_order_snapshot(row: &Value) -> Result<OrderSnapshot, BrokerError> {
+    let raw_tag = row
+        .get("ordertag")
+        .or_else(|| row.get("tag"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let client_order_id = raw_tag
+        .as_deref()
+        .and_then(DecodedOrderTag::decode)
+        .and_then(|decoded| decoded.exact_uuid());
     Ok(OrderSnapshot {
         order_id: row
             .get("orderid")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
-        client_order_id: None,
+        client_order_id,
         exchange_order_id: row
             .get("exchorderid")
             .and_then(Value::as_str)
             .map(str::to_string),
+        tag: raw_tag,
         instrument: instrument_from_json(row)?,
         side: mapping::order_side(
             row.get("transactiontype")
@@ -259,6 +270,9 @@ pub struct AngelOneExecutor {
 }
 
 impl AngelOneExecutor {
+    /// Request timeout applied to every REST call.
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
     /// Build the executor from a SmartAPI session plus the static credentials.
     ///
     /// The session is obtained from `tantra_exec_auth::login::AngelOneSmartLogin`
@@ -272,7 +286,10 @@ impl AngelOneExecutor {
         tokens: &SessionTokens,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Self::REQUEST_TIMEOUT)
+                .build()
+                .expect("reqwest client builds without a TLS backend failure"),
             base_url: DEFAULT_BASE_URL.to_string(),
             access_token: tokens.access_token.clone(),
             feed_token: tokens.feed_token.clone(),
@@ -286,6 +303,15 @@ impl AngelOneExecutor {
     /// Point the executor at a different gateway root (tests / proxies).
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
+        self
+    }
+
+    /// Override the HTTP request timeout applied to REST calls.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("reqwest client builds without a TLS backend failure");
         self
     }
 
@@ -355,16 +381,51 @@ impl AngelOneExecutor {
         path: &str,
         body: Option<Value>,
     ) -> Result<Value, BrokerError> {
-        let response = self
-            .request(method, path, body)
-            .send()
-            .await
-            .map_err(|e| BrokerError::Transport(format!("angelone {path} transport: {e}")))?;
+        self.call_with_idempotency(method, path, body, None).await
+    }
+
+    async fn call_with_idempotency(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+        ambiguous_on_io_err: Option<Uuid>,
+    ) -> Result<Value, BrokerError> {
+        let response = match self.request(method, path, body).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                if e.is_connect() {
+                    return Err(BrokerError::Transport(format!(
+                        "angelone {path} transport: {e}"
+                    )));
+                }
+                if e.is_builder() {
+                    return Err(BrokerError::InvalidRequest(format!(
+                        "angelone {path} request: {e}"
+                    )));
+                }
+                if let Some(client_order_id) = ambiguous_on_io_err {
+                    return Err(BrokerError::OutcomeUnknown {
+                        client_order_id,
+                        message: format!("angelone {path} post-send error: {e}"),
+                    });
+                }
+                return Err(BrokerError::Transport(format!(
+                    "angelone {path} transport: {e}"
+                )));
+            }
+        };
         let status = response.status();
         let bytes = response
             .bytes()
             .await
-            .map_err(|e| BrokerError::Transport(format!("angelone {path} read: {e}")))?;
+            .map_err(|e| match ambiguous_on_io_err {
+                Some(client_order_id) => BrokerError::OutcomeUnknown {
+                    client_order_id,
+                    message: format!("angelone {path} read: {e}"),
+                },
+                None => BrokerError::Transport(format!("angelone {path} read: {e}")),
+            })?;
         let text = String::from_utf8_lossy(&bytes);
 
         if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -452,7 +513,12 @@ impl BrokerExecutor for AngelOneExecutor {
     async fn place_order(&self, req: OrderRequest) -> Result<OrderAck, BrokerError> {
         let payload = build_order_payload(&req, self.default_product)?;
         let data = self
-            .call(reqwest::Method::POST, PLACE_ORDER_PATH, Some(payload))
+            .call_with_idempotency(
+                reqwest::Method::POST,
+                PLACE_ORDER_PATH,
+                Some(payload),
+                Some(req.client_order_id),
+            )
             .await?;
         let order_id = data
             .get("orderid")

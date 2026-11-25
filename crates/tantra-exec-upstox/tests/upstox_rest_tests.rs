@@ -2,16 +2,19 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
 
 use tantra_core::{
     Exchange, InstrumentId, OrderRequest, OrderSide, OrderStatus, OrderType, Price, Quantity,
 };
+use tantra_exec_core::tag::OrderTag;
 use tantra_exec_core::{BrokerError, BrokerExecutor, PositionSide, ProductType};
 use tantra_exec_upstox::{UpstoxExecutor, map_upstox_error};
 
@@ -56,6 +59,7 @@ async fn place_order_posts_exact_json_payload() {
         Quantity::from_u64(10),
         "algo-m2",
     );
+    let expected_tag = OrderTag::from_request(&req).wire_tag_full();
     let ack = executor.place_order(req).await.expect("ack");
     assert_eq!(ack.order_id, "240212000000081");
     assert_eq!(ack.status, OrderStatus::New);
@@ -68,8 +72,138 @@ async fn place_order_posts_exact_json_payload() {
     assert_eq!(obj["trigger_price"], "1545.50");
     assert_eq!(obj["quantity"], 10);
     assert_eq!(obj["product"], "I");
-    assert_eq!(obj["tag"], "algo-m2");
+    assert_eq!(obj["tag"], expected_tag);
     assert_eq!(obj["transaction_type"], "BUY");
+}
+
+#[tokio::test]
+async fn place_order_drop_connection_returns_outcome_unknown() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            drop(socket);
+        }
+    });
+
+    let executor = UpstoxExecutor::with_base_url("k", "t", format!("http://{addr}"));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "SBIN").unwrap(),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from_u64(2),
+        "algo-drop",
+    );
+    let cid = req.client_order_id;
+    let err = executor.place_order(req).await.unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send drop, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_timeout_returns_outcome_unknown() {
+    let app = Router::new().route(
+        "/order/place",
+        post(|| async {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            Json(json!({"status": "success", "data": {"order_id": "LATE"}}))
+        }),
+    );
+    let base = spawn_mock(app).await;
+    let executor =
+        UpstoxExecutor::with_base_url("k", "t", base).with_timeout(Duration::from_millis(40));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "SBIN").unwrap(),
+        OrderSide::Sell,
+        OrderType::Market,
+        Quantity::from_u64(1),
+        "algo-to",
+    );
+    let cid = req.client_order_id;
+    let err = executor.place_order(req).await.unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send timeout, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_connect_refused_returns_transport() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let executor = UpstoxExecutor::with_base_url("k", "t", format!("http://{addr}"));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "SBIN").unwrap(),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from_u64(1),
+        "algo-conn",
+    );
+    let err = executor.place_order(req).await.unwrap_err();
+    assert!(
+        matches!(err, BrokerError::Transport(_)),
+        "expected Transport on connect refusal, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn find_by_client_order_id_recovers_exact_uuid_from_order_book_tag() {
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "SBIN").unwrap(),
+        OrderSide::Buy,
+        OrderType::Limit(Price::from_rupees("470.25").unwrap()),
+        Quantity::from_u64(2),
+        "algo-recon",
+    );
+    let cid = req.client_order_id;
+    let wire_tag = OrderTag::from_request(&req).wire_tag_full();
+
+    let app = Router::new().route(
+        "/order/book",
+        get(move || {
+            let tag = wire_tag.clone();
+            async move {
+                Json(json!({
+                    "status": "success",
+                    "data": [{
+                        "order_id": "240212000999888",
+                        "exchange_order_id": "151102000542899",
+                        "exchange": "NSE",
+                        "tradingsymbol": "SBIN-EQ",
+                        "instrument_token": "NSE_EQ|INE062A00720",
+                        "transaction_type": "BUY",
+                        "product": "D",
+                        "order_type": "LIMIT",
+                        "status": "open",
+                        "quantity": 2,
+                        "filled_quantity": 0,
+                        "price": "470.25",
+                        "tag": tag,
+                        "exchange_timestamp": "2024-02-21 14:40:02"
+                    }]
+                }))
+            }
+        }),
+    );
+    let base = spawn_mock(app).await;
+    let executor = UpstoxExecutor::with_base_url("k", "t", base);
+    let found = executor
+        .find_by_client_order_id(cid)
+        .await
+        .expect("lookup succeeds")
+        .expect("order matched via full 26-char tag");
+    assert_eq!(found.order_id, "240212000999888");
+    assert_eq!(found.client_order_id, Some(cid));
 }
 
 #[tokio::test]

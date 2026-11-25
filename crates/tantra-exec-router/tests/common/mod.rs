@@ -13,7 +13,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use tantra_core::{OrderAck, OrderRequest, OrderSide, OrderStatus, Price, Quantity};
-use tantra_exec_core::{BrokerError, BrokerExecutor};
+use tantra_exec_core::{BrokerError, BrokerExecutor, OrderSnapshot};
 
 /// Scripted per-call outcomes replayed in order.
 #[derive(Debug, Clone, Copy)]
@@ -24,8 +24,13 @@ pub enum Script {
     Reject,
     /// Network/transport failure (gateway NOT reached).
     Transport,
-    /// Request timeout (failover-eligible).
+    /// Pre-send request timeout (failover-eligible).
     Timeout,
+    /// Ambiguous post-send timeout or drop (must reconcile, never fail over).
+    OutcomeUnknown,
+    /// Server actually booked the order, then dropped the HTTP response so
+    /// the client receives `OutcomeUnknown` and must reconcile via `order_book`.
+    OutcomeUnknownAccepted,
 }
 
 /// In-memory broker executor with scripted outcomes and a configurable
@@ -38,6 +43,8 @@ pub struct MockBroker {
     pub placements: Arc<Mutex<Vec<OrderRequest>>>,
     pub modifications: Arc<Mutex<Vec<String>>>,
     pub cancellations: Arc<Mutex<Vec<String>>>,
+    pub book: Arc<Mutex<Vec<OrderSnapshot>>>,
+    pub book_queries: Arc<Mutex<usize>>,
 }
 
 impl MockBroker {
@@ -55,6 +62,8 @@ impl MockBroker {
             placements: Arc::new(Mutex::new(Vec::new())),
             modifications: Arc::new(Mutex::new(Vec::new())),
             cancellations: Arc::new(Mutex::new(Vec::new())),
+            book: Arc::new(Mutex::new(Vec::new())),
+            book_queries: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -87,6 +96,10 @@ impl MockBroker {
     pub fn cancelled(&self) -> Vec<String> {
         self.cancellations.lock().unwrap().clone()
     }
+
+    pub fn order_book_queries(&self) -> usize {
+        *self.book_queries.lock().unwrap()
+    }
 }
 
 #[async_trait]
@@ -106,6 +119,38 @@ impl BrokerExecutor for MockBroker {
             Script::Reject => return Err(BrokerError::Rejected("RMS margin shortfall".into())),
             Script::Transport => return Err(BrokerError::Transport("gateway dial timeout".into())),
             Script::Timeout => return Err(BrokerError::Timeout),
+            Script::OutcomeUnknown => {
+                return Err(BrokerError::OutcomeUnknown {
+                    client_order_id: req.client_order_id,
+                    message: "connection dropped after POST".into(),
+                });
+            }
+            Script::OutcomeUnknownAccepted => {
+                let mut seq = self.seq.lock().unwrap();
+                *seq += 1;
+                let order_id = format!("{}-{}", self.name, *seq);
+                self.placements.lock().unwrap().push(req.clone());
+                self.book.lock().unwrap().push(OrderSnapshot {
+                    order_id,
+                    client_order_id: Some(req.client_order_id),
+                    exchange_order_id: None,
+                    tag: None,
+                    instrument: req.instrument.clone(),
+                    side: req.side,
+                    order_type: req.order_type,
+                    quantity: req.quantity,
+                    filled_quantity: Quantity::ZERO,
+                    price: req.order_type.limit_price(),
+                    trigger_price: req.order_type.trigger_price(),
+                    status: OrderStatus::New,
+                    product: None,
+                    timestamp: Utc::now(),
+                });
+                return Err(BrokerError::OutcomeUnknown {
+                    client_order_id: req.client_order_id,
+                    message: "response dropped after exchange accept".into(),
+                });
+            }
             Script::Ok => {}
         }
         if !self.latency.is_zero() {
@@ -157,6 +202,11 @@ impl BrokerExecutor for MockBroker {
             .unwrap()
             .push(order_id.to_string());
         Ok(())
+    }
+
+    async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
+        *self.book_queries.lock().unwrap() += 1;
+        Ok(self.book.lock().unwrap().clone())
     }
 
     async fn get_order_status(&self, _order_id: &str) -> Result<OrderStatus, BrokerError> {

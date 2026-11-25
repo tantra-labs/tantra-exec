@@ -16,7 +16,7 @@ use rust_decimal::Decimal;
 use tantra_core::{Bar, Money, OrderAck, OrderRequest, OrderStatus, Price, Quantity, Tick};
 use tantra_exec_core::{
     BrokerError, BrokerExecutor, BrokerHealth, BrokerMargins, BrokerPosition, OrderSnapshot,
-    PositionSide, ProductType,
+    OrderTag, PositionSide, ProductType,
 };
 
 use crate::lifecycle::OrderState;
@@ -185,6 +185,7 @@ impl BrokerExecutor for PaperExchangeExecutor {
                 order_id: order_id.clone(),
                 client_order_id: Some(working.client_order_id),
                 exchange_order_id: Some(format!("EX-{order_id}")),
+                tag: Some(OrderTag::encode_uuid_full(working.client_order_id)),
                 instrument: working.instrument.clone(),
                 side: working.side,
                 order_type: working.order_type,

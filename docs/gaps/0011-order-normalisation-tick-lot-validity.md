@@ -21,11 +21,11 @@ Best case the broker rejects the order; worst case it carries an unexpected vali
 1. Add `InstrumentSpec { tick, lot }`, passed through `OrderRequest` or the port.
 2. Introduce a `ValidatedOrder` newtype produced by a single validation function (tick, lot, algo id format, non-empty tag) and required by `BrokerExecutor::place_order`.
 3. Adapters return `Err(InvalidRequest)` on an unsupported time-in-force instead of remapping it; implement Kite `TTL` only with a `validity_ttl`.
-4. Reuse the shared `OrderTag` from [0004](0004-idempotent-submit-and-outcome-unknown.md) for tag length and charset rules.
+4. Reuse the shared `OrderTag` from [0004 (closed)](README.md#closed-gaps) for tag length and charset rules.
 
 **Verification**: proptest on tick rounding and lot multiples; golden wire vectors per broker; negative tests for empty/oversized algo id and unsupported GTC. Gates as in plan 0004.
 
 ## Related
 
-- [0004](0004-idempotent-submit-and-outcome-unknown.md) (tag scheme).
+- [0004 (closed)](README.md#closed-gaps) (tag scheme).
 - Plan 0004 R2 and R3 (duplicated wire mapping across adapters and Python).

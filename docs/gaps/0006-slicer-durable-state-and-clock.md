@@ -9,7 +9,7 @@
 - `crates/tantra-exec-slicer/src/twap.rs:206-236` `run_twap(executor, stream, parent, plan, chase)` takes a single `&dyn BrokerExecutor`. There is no parent-state object; child fill accounting lives in a local `TwapOutcome`, so a process crash mid-schedule loses which legs were sent.
 - `crates/tantra-exec-slicer/src/twap.rs:216` calls `Utc::now()` directly: the schedule is not driven by an injected clock.
 - `crates/tantra-exec-router/src/sor.rs:131` ownership is per broker order id; there is no parent/child linkage between slicer children and routed accounts.
-- `crates/tantra-exec-router/src/sor.rs:326-331` failover on `Transport | Timeout` (see [0004](0004-idempotent-submit-and-outcome-unknown.md)); `sor.rs:439` counts a health failure for the same set, so one ambiguous timeout also trips the circuit.
+- `crates/tantra-exec-router/src/sor.rs:326-331` failover on `Transport | Timeout` (see [0004 (closed)](README.md#closed-gaps)); `sor.rs:439` counts a health failure for the same set, so one ambiguous timeout also trips the circuit.
 
 ## Why
 
@@ -26,5 +26,5 @@ After a crash or failover a TWAP can resubmit already-sent legs or exceed the pa
 
 ## Related
 
-- [0004](0004-idempotent-submit-and-outcome-unknown.md), [0005](0005-durable-order-id-map-and-reconcile.md).
+- [0004 (closed)](README.md#closed-gaps), [0005](0005-durable-order-id-map-and-reconcile.md).
 - Plan 0004 R4 (drain policy for open slicer legs and bracket stops).

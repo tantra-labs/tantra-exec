@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use tantra_core::{OrderAck, OrderRequest, OrderStatus, Price, Quantity};
 use tokio::sync::{Mutex, Notify};
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::bracket::{BracketCapabilities, BracketOrderSpec, BracketTicket, StopUpdate};
 use crate::error::BrokerError;
@@ -356,7 +357,7 @@ impl TokenBucketRateLimiter {
 
     /// Consume tokens, queueing behind strictly higher-priority waiters until
     /// granted. Waits up to `max_wait`; on expiry the waiter is deregistered
-    /// and [`BrokerError::Timeout`] is returned (tokens already spent on our
+    /// and [`BrokerError::RateLimited`] is returned (tokens already spent on our
     /// behalf by a racing grant still complete as success).
     pub async fn acquire_for(
         &self,
@@ -614,7 +615,7 @@ impl<E: BrokerExecutor> BrokerExecutor for RateLimitedBroker<E> {
     }
 
     async fn health_check(&self) -> Result<BrokerHealth, BrokerError> {
-        self.budget_for(RequestPriority::Normal).await?;
+        self.budget_for(RequestPriority::Low).await?;
         self.inner.health_check().await
     }
 
@@ -662,6 +663,14 @@ impl<E: BrokerExecutor> BrokerExecutor for RateLimitedBroker<E> {
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         self.budget_for(RequestPriority::Low).await?;
         self.inner.fetch_order_book().await
+    }
+
+    async fn find_by_client_order_id(
+        &self,
+        client_order_id: Uuid,
+    ) -> Result<Option<OrderSnapshot>, BrokerError> {
+        self.budget_for(RequestPriority::Low).await?;
+        self.inner.find_by_client_order_id(client_order_id).await
     }
 
     async fn fetch_positions(&self) -> Result<Vec<BrokerPosition>, BrokerError> {

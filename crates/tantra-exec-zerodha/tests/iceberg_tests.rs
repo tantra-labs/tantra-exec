@@ -10,6 +10,7 @@ use axum::{Form, Json, Router};
 use serde_json::json;
 
 use tantra_core::{Exchange, InstrumentId, OrderRequest, OrderSide, OrderType, Price, Quantity};
+use tantra_exec_core::tag::OrderTag;
 use tantra_exec_core::validate_native_legs;
 use tantra_exec_core::{BrokerError, IcebergOrderExecutor, ProductType};
 use tantra_exec_zerodha::ZerodhaExecutor;
@@ -53,6 +54,7 @@ async fn native_iceberg_posts_iceberg_variety_with_metered_legs() {
         .with_product(ProductType::CncDelivery);
 
     let parent = nifty_parent();
+    let expected_tag = OrderTag::from_request(&parent).wire_tag_20();
     let ack = executor
         .place_iceberg_order(parent, Quantity::from_u64(250))
         .await
@@ -70,7 +72,7 @@ async fn native_iceberg_posts_iceberg_variety_with_metered_legs() {
     );
     assert_eq!(form["order_type"], "LIMIT");
     assert_eq!(form["price"], "24850.05");
-    assert_eq!(form["tag"], "algo-m3", "SEBI algo tag preserved");
+    assert_eq!(form["tag"], expected_tag, "idempotent wire tag preserved");
 }
 
 #[tokio::test]
@@ -101,17 +103,10 @@ async fn native_iceberg_rejects_non_dividing_display() {
         .unwrap_err();
     assert!(
         matches!(err, BrokerError::InvalidRequest(_)),
-        "leg-count cap enforced: {err}"
+        "leg-count cap exceeded: {err:?}"
     );
-}
-
-/// Contract parity shim — the te-core free function must agree with the
-/// adapter's validation path.
-#[test]
-fn te_core_validation_matches_kite_rules() {
     assert_eq!(
         validate_native_legs(Quantity::from_u64(1000), Quantity::from_u64(250)).unwrap(),
         4
     );
-    assert!(validate_native_legs(Quantity::from_u64(1000), Quantity::from_u64(1)).is_err());
 }

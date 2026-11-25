@@ -1,13 +1,16 @@
 //! REST conformance tests against a local axum mock of the SmartAPI gateway.
 //!
 //! The mock serves the documented envelope (`status` / `message` / `errorcode`
-//! / `data`) so the executor's decode, error mapping and exact-decimal wire
-//! handling are exercised end-to-end without a real broker.
+//! / `data`) so the executor's decode, error mapping, idempotent `OrderTag`
+//! correlation, unknown-outcome classification, and exact-decimal wire handling
+//! are exercised end-to-end without a real broker.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use chrono::Utc;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
@@ -16,6 +19,7 @@ use tantra_core::{
 };
 use tantra_exec_angelone::{AngelOneExecutor, DEFAULT_BASE_URL};
 use tantra_exec_auth::tokens::SessionTokens;
+use tantra_exec_core::tag::OrderTag;
 use tantra_exec_core::{BrokerError, BrokerExecutor, PositionSide};
 
 /// Canned SmartAPI success envelope.
@@ -172,7 +176,9 @@ async fn place_order_returns_ack_and_exact_payload() {
     );
     let base_url = serve(app).await;
     let executor = executor(&base_url);
-    let ack = executor.place_order(sample_order()).await.unwrap();
+    let req = sample_order();
+    let expected_tag = OrderTag::from_request(&req).wire_tag_20();
+    let ack = executor.place_order(req).await.unwrap();
 
     assert_eq!(ack.order_id, "260223110000001");
     assert_eq!(ack.status, OrderStatus::New);
@@ -191,7 +197,115 @@ async fn place_order_returns_ack_and_exact_payload() {
     assert_eq!(bodies[0]["price"], "1450.50");
     assert_eq!(bodies[0]["triggerprice"], "0.00");
     assert_eq!(bodies[0]["duration"], "DAY");
-    assert_eq!(bodies[0]["tag"], "ALGO-1");
+    assert_eq!(bodies[0]["tag"], expected_tag);
+}
+
+#[tokio::test]
+async fn place_order_drop_connection_returns_outcome_unknown() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            drop(socket);
+        }
+    });
+
+    let req = sample_order();
+    let cid = req.client_order_id;
+    let err = executor(&format!("http://{addr}"))
+        .place_order(req)
+        .await
+        .unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send drop, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_timeout_returns_outcome_unknown() {
+    let app = Router::new().route(
+        "/rest/secure/angelbroking/order/v1/placeOrder",
+        axum::routing::post(|| async {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            axum::response::Json(envelope(serde_json::json!({ "orderid": "LATE" })))
+        }),
+    );
+    let base_url = serve(app).await;
+    let req = sample_order();
+    let cid = req.client_order_id;
+    let err = executor(&base_url)
+        .with_timeout(Duration::from_millis(40))
+        .place_order(req)
+        .await
+        .unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send timeout, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_connect_refused_returns_transport() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let err = executor(&format!("http://{addr}"))
+        .place_order(sample_order())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, BrokerError::Transport(_)),
+        "expected Transport on connect refusal, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn find_by_client_order_id_reconciles_via_ordertag() {
+    let req = sample_order();
+    let cid = req.client_order_id;
+    let wire_tag = OrderTag::from_request(&req).wire_tag_20();
+
+    let app = Router::new().route(
+        "/rest/secure/angelbroking/order/v1/getOrderBook",
+        axum::routing::get(move || {
+            let tag = wire_tag.clone();
+            async move {
+                axum::response::Json(envelope(serde_json::json!([{
+                    "orderid": "260223110009999",
+                    "exchorderid": "110009999",
+                    "tradingsymbol": "RELIANCE",
+                    "symboltoken": "2885",
+                    "exchange": "NSE",
+                    "transactiontype": "BUY",
+                    "ordertype": "LIMIT",
+                    "producttype": "DELIVERY",
+                    "quantity": "25",
+                    "price": "1450.50",
+                    "triggerprice": "0.00",
+                    "filledquantity": "0",
+                    "averageprice": "0.00",
+                    "status": "open",
+                    "orderentertime": "2024-02-21T09:20:00 IST",
+                    "ordertag": tag
+                }])))
+            }
+        }),
+    );
+    let base_url = serve(app).await;
+    let found = executor(&base_url)
+        .find_by_client_order_id(cid)
+        .await
+        .expect("lookup succeeds")
+        .expect("order matched via compact tag");
+    assert_eq!(found.order_id, "260223110009999");
 }
 
 #[tokio::test]

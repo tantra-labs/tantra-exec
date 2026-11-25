@@ -18,7 +18,10 @@
 //! 3. Place through the top candidate. On `Transport`/`Timeout` failure the
 //!    hop advances to the next-ranked account (transparent automated
 //!    failover, plan §4 M4 item 5), up to `max_failover_hops`.
-//! 4. Business-level outcomes (broker rejections) count as gateway-reached
+//! 4. Post-send [`BrokerError::OutcomeUnknown`] triggers order-book
+//!    reconciliation (`find_by_client_order_id`) on the same broker, never
+//!    fails over to another broker, and never trips the circuit breaker.
+//! 5. Business-level outcomes (broker rejections) count as gateway-reached
 //!    OTR actions and never trigger failover — re-routing a broker-rejected
 //!    order would risk double execution.
 //!
@@ -321,6 +324,45 @@ impl ResilientRouter {
                         ack,
                     });
                 }
+                // Post-send ambiguity: the request may have reached the venue.
+                // Reconcile via order book on the same broker, NEVER fail over
+                // to a secondary, and NEVER trip the circuit breaker.
+                Err(BrokerError::OutcomeUnknown {
+                    client_order_id,
+                    message,
+                }) => {
+                    if let Ok(Some(snapshot)) = registration
+                        .executor
+                        .find_by_client_order_id(client_order_id)
+                        .await
+                    {
+                        registration.health.record_latency(started.elapsed(), now);
+                        registration.health.record_success(now);
+                        registration.ledger.lock().unwrap().orders += 1;
+                        self.ownership
+                            .lock()
+                            .unwrap()
+                            .insert(snapshot.order_id.clone(), registration.name.clone());
+                        let ack = OrderAck {
+                            order_id: snapshot.order_id,
+                            client_order_id,
+                            exchange_order_id: snapshot.exchange_order_id,
+                            status: snapshot.status,
+                            timestamp: snapshot.timestamp,
+                            correlation_id: req.correlation_id,
+                            client_id: req.client_id.clone(),
+                            trace_context: req.trace_context,
+                        };
+                        return Ok(RoutedAck {
+                            broker: registration.name.clone(),
+                            ack,
+                        });
+                    }
+                    return Err(BrokerError::OutcomeUnknown {
+                        client_order_id,
+                        message,
+                    });
+                }
                 // Transport-level failure: gateway unreachable → trip-
                 // eligible health failure and transparent failover hop.
                 Err(error @ BrokerError::Transport(_) | error @ BrokerError::Timeout) => {
@@ -438,7 +480,7 @@ impl ResilientRouter {
             Err(error) => {
                 if matches!(error, BrokerError::Transport(_) | BrokerError::Timeout) {
                     registration.health.record_failure(now);
-                } else {
+                } else if !error.is_outcome_unknown() {
                     registration.health.record_success(now);
                 }
             }

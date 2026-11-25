@@ -17,6 +17,7 @@ use crate::bracket::{
 };
 use crate::decimal::quantity_to_u32_exact;
 use crate::error::BrokerError;
+use crate::tag::OrderTag;
 use crate::types::{BrokerHealth, BrokerMargins, BrokerPosition, OrderSnapshot, ProductType};
 
 /// Gateway contract for native iceberg legging: `display` must divide the
@@ -55,6 +56,7 @@ pub fn validate_native_legs(
 /// Compared with v1, this adds:
 /// - [`BrokerExecutor::health_check`] — session/connection probing
 /// - [`BrokerExecutor::fetch_order_book`] — full active order book snapshot
+/// - [`BrokerExecutor::find_by_client_order_id`] — idempotent reconciliation lookup
 /// - [`BrokerExecutor::fetch_positions`] — Demat and intraday positions
 /// - [`BrokerExecutor::fetch_margins`] — real-time cash and margin balances
 ///
@@ -136,6 +138,21 @@ pub trait BrokerExecutor: Send + Sync {
         Err(BrokerError::InvalidRequest(
             "fetch_order_book is not implemented by this broker adapter".into(),
         ))
+    }
+
+    /// Reconcile a prior or ambiguous order submission by client correlation ID.
+    ///
+    /// Default implementation scans [`BrokerExecutor::fetch_order_book`] and
+    /// matches via [`OrderSnapshot::matches_client_order_id`] (checking both
+    /// exact UUIDs and compact wire tags).
+    async fn find_by_client_order_id(
+        &self,
+        client_order_id: Uuid,
+    ) -> Result<Option<OrderSnapshot>, BrokerError> {
+        let book = self.fetch_order_book().await?;
+        Ok(book
+            .into_iter()
+            .find(|snapshot| snapshot.matches_client_order_id(client_order_id)))
     }
 
     /// Fetch current Demat and intraday positions.
@@ -307,6 +324,13 @@ impl<T: BrokerExecutor + ?Sized> BrokerExecutor for Arc<T> {
         (**self).fetch_order_book().await
     }
 
+    async fn find_by_client_order_id(
+        &self,
+        client_order_id: Uuid,
+    ) -> Result<Option<OrderSnapshot>, BrokerError> {
+        (**self).find_by_client_order_id(client_order_id).await
+    }
+
     async fn fetch_positions(&self) -> Result<Vec<BrokerPosition>, BrokerError> {
         (**self).fetch_positions().await
     }
@@ -376,6 +400,13 @@ impl<E: BrokerExecutor> BrokerExecutor for RiskGatedExecutor<E> {
 
     async fn fetch_order_book(&self) -> Result<Vec<OrderSnapshot>, BrokerError> {
         self.inner.fetch_order_book().await
+    }
+
+    async fn find_by_client_order_id(
+        &self,
+        client_order_id: Uuid,
+    ) -> Result<Option<OrderSnapshot>, BrokerError> {
+        self.inner.find_by_client_order_id(client_order_id).await
     }
 
     async fn fetch_positions(&self) -> Result<Vec<BrokerPosition>, BrokerError> {
@@ -600,6 +631,7 @@ impl BrokerExecutor for MockBrokerExecutor {
                 order_id: order_id.clone(),
                 client_order_id: Some(req.client_order_id),
                 exchange_order_id: Some(format!("EX-{order_id}")),
+                tag: Some(OrderTag::from_request(req).wire_tag_full()),
                 instrument: req.instrument.clone(),
                 side: req.side,
                 order_type: req.order_type,

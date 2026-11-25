@@ -30,6 +30,6 @@ Fills during a WebSocket gap are lost, so the OMS and ledger diverge from the br
 
 ## Related
 
-- Root gap 0010; [0004](0004-idempotent-submit-and-outcome-unknown.md).
+- Root gap 0010; [0004 (closed)](README.md#closed-gaps).
 - Root plan 0019 P1.5 touches the same WS channels (bounded channels only, a different issue).
 - Plan 0004 R4 (graceful drain and gateway singleton) shares the reconnect loops.

@@ -1,16 +1,22 @@
-//! Upstox v2 payload tests — asserts exact decimal string serialization and
-//! that NO floating-point values exist anywhere in the serialized wire form.
+//! Upstox v2 payload tests — asserts exact decimal string serialization,
+//! idempotent full-UUID wire `OrderTag`, and that NO floating-point values
+//! exist anywhere in the serialized wire form.
+
+use uuid::Uuid;
 
 use tantra_core::{Exchange, InstrumentId, OrderRequest, OrderSide, OrderType, Price, Quantity};
+use tantra_exec_core::tag::{DecodedOrderTag, OrderTag, UPSTOX_TAG_MAX_LEN};
 use tantra_exec_core::{BrokerError, ProductType};
 use tantra_exec_upstox::{UpstoxExecutor, UpstoxOrderPayload};
 
 #[test]
-fn payload_uses_exact_decimal_strings_never_f64() {
+fn payload_uses_exact_decimal_strings_never_f64_and_carries_idempotent_tag() {
+    let cid = Uuid::parse_str("01234567-89ab-4cde-8123-456789abcdef").unwrap();
     let inst = InstrumentId::try_new(Exchange::Nse, "TCS")
         .unwrap()
         .with_token("NSE_EQ|INE467B01029");
-    let req = OrderRequest::new(
+    let req = OrderRequest::with_id(
+        cid,
         inst,
         OrderSide::Sell,
         OrderType::Limit(Price::from_rupees("3800.00").unwrap()),
@@ -24,7 +30,19 @@ fn payload_uses_exact_decimal_strings_never_f64() {
     assert_eq!(payload.quantity, 5);
     assert_eq!(payload.price, Some("3800.00".to_string()));
     assert_eq!(payload.trigger_price, None);
-    assert_eq!(payload.tag.as_deref(), Some("algo-upstox"));
+
+    // Golden vector: full 26-char Base32 encoding of client_order_id fits
+    // Upstox's 40-char limit and round-trips losslessly.
+    let expected_tag = OrderTag::from_request(&req).wire_tag_full();
+    assert_eq!(expected_tag, "AERUKZ4JVNGN5AJDIVTYTK6N54");
+    let wire_tag = payload.tag.as_deref().unwrap();
+    assert_eq!(wire_tag, expected_tag);
+    assert!(wire_tag.len() <= UPSTOX_TAG_MAX_LEN);
+    assert_eq!(
+        DecodedOrderTag::decode(wire_tag),
+        Some(DecodedOrderTag::Exact(cid))
+    );
+
     assert_eq!(payload.product, "D");
     assert_eq!(payload.instrument_token, "NSE_EQ|INE467B01029");
 

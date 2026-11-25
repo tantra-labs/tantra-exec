@@ -1,12 +1,15 @@
 //! M2 Zerodha REST contract tests against a loopback axum mock.
 //!
-//! Verifies: exact decimal payload/decoding, modify/cancel routes, error
-//! taxonomy (429/TokenException/InputException/NetworkException), order book
-//! mapping incl. SL/SL-M and IST timestamps, positions with short side, and
-//! margins aggregation.
+//! Verifies: exact decimal payload/decoding, idempotent wire `OrderTag`
+//! placement and reconciliation, submit-then-drop-connection & timeout
+//! `OutcomeUnknown` classification, connect-refused `Transport`, modify/cancel
+//! routes, error taxonomy (429/TokenException/InputException/NetworkException),
+//! order book mapping incl. SL/SL-M and IST timestamps, positions with short
+//! side, and margins aggregation.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
@@ -14,10 +17,12 @@ use axum::routing::{delete, get, post, put};
 use axum::{Form, Json, Router};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
 
 use tantra_core::{
     Exchange, InstrumentId, OrderRequest, OrderSide, OrderStatus, OrderType, Price, Quantity,
 };
+use tantra_exec_core::tag::OrderTag;
 use tantra_exec_core::{BrokerError, BrokerExecutor, PositionSide, ProductType};
 use tantra_exec_zerodha::ZerodhaExecutor;
 
@@ -57,6 +62,7 @@ async fn place_order_posts_exact_form_and_maps_ack() {
         Quantity::from_u64(10),
         "algo-m2",
     );
+    let expected_tag = OrderTag::from_request(&req).wire_tag_20();
     let ack = executor.place_order(req).await.expect("ack");
     assert_eq!(ack.order_id, "220119000332528");
     assert_eq!(ack.status, OrderStatus::New);
@@ -66,8 +72,139 @@ async fn place_order_posts_exact_form_and_maps_ack() {
     assert_eq!(form["price"], "2500.50");
     assert_eq!(form["quantity"], "10");
     assert_eq!(form["product"], "MIS");
-    assert_eq!(form["tag"], "algo-m2");
+    assert_eq!(form["tag"], expected_tag);
     assert_eq!(form["transaction_type"], "BUY");
+}
+
+#[tokio::test]
+async fn place_order_drop_connection_returns_outcome_unknown() {
+    // Bind a raw TCP socket: accept the connection, read the HTTP POST bytes,
+    // and drop the stream abruptly without sending any HTTP response.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            drop(socket);
+        }
+    });
+
+    let executor = ZerodhaExecutor::with_base_url("k", "t", format!("http://{addr}"));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "RELIANCE").unwrap(),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from_u64(5),
+        "algo-drop",
+    );
+    let cid = req.client_order_id;
+    let err = executor.place_order(req).await.unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send drop, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_timeout_returns_outcome_unknown() {
+    let app = Router::new().route(
+        "/orders/regular",
+        post(|| async {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            Json(json!({"status":"success","data":{"order_id":"LATE"}}))
+        }),
+    );
+    let base = spawn_mock(app).await;
+    let executor =
+        ZerodhaExecutor::with_base_url("k", "t", base).with_timeout(Duration::from_millis(40));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
+        OrderSide::Sell,
+        OrderType::Market,
+        Quantity::from_u64(1),
+        "algo-to",
+    );
+    let cid = req.client_order_id;
+    let err = executor.place_order(req).await.unwrap_err();
+    match err {
+        BrokerError::OutcomeUnknown {
+            client_order_id, ..
+        } => assert_eq!(client_order_id, cid),
+        other => panic!("expected OutcomeUnknown on post-send timeout, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn place_order_connect_refused_returns_transport() {
+    // Bind and drop immediately so TCP SYN receives ECONNREFUSED.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let executor = ZerodhaExecutor::with_base_url("k", "t", format!("http://{addr}"));
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "TCS").unwrap(),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from_u64(1),
+        "algo-conn",
+    );
+    let err = executor.place_order(req).await.unwrap_err();
+    assert!(
+        matches!(err, BrokerError::Transport(_)),
+        "expected Transport on connect refusal, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn find_by_client_order_id_reconciles_via_kite_wire_tag() {
+    let req = OrderRequest::new(
+        InstrumentId::try_new(Exchange::Nse, "SBIN").unwrap(),
+        OrderSide::Buy,
+        OrderType::Limit(Price::from_rupees("470.25").unwrap()),
+        Quantity::from_u64(2),
+        "algo-recon",
+    );
+    let cid = req.client_order_id;
+    let wire_tag = OrderTag::from_request(&req).wire_tag_20();
+
+    let app = Router::new().route(
+        "/orders",
+        get(move || {
+            let tag = wire_tag.clone();
+            async move {
+                Json(json!({
+                    "status": "success",
+                    "data": [{
+                        "order_id": "220119000999888",
+                        "exchange_order_id": "1000000001482499",
+                        "exchange": "NSE",
+                        "tradingsymbol": "SBIN",
+                        "transaction_type": "BUY",
+                        "status": "OPEN",
+                        "product": "CNC",
+                        "order_type": "LIMIT",
+                        "quantity": 2,
+                        "filled_quantity": 0,
+                        "price": 470.25,
+                        "tag": tag,
+                        "order_timestamp": "2022-03-03 09:24:25"
+                    }]
+                }))
+            }
+        }),
+    );
+    let base = spawn_mock(app).await;
+    let executor = ZerodhaExecutor::with_base_url("k", "t", base);
+    let found = executor
+        .find_by_client_order_id(cid)
+        .await
+        .expect("lookup succeeds")
+        .expect("order matched via compact 20-char tag");
+    assert_eq!(found.order_id, "220119000999888");
 }
 
 #[tokio::test]

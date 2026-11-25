@@ -1,14 +1,17 @@
-//! `placeOrder` payload tests: exact 2-scale decimal strings on the wire and
-//! no floating point anywhere.
+//! `placeOrder` payload tests: exact 2-scale decimal strings on the wire,
+//! idempotent wire `OrderTag` encoding, and no floating point anywhere.
 //!
 //! Prices / triggers are asserted as exact strings (e.g. `"1450.50"`), the
 //! quantity is a u32, and the `ordertype` / `transactiontype` / `producttype`
-//! / `duration` / `symboltoken` legs follow the SmartAPI contract.
+//! / `duration` / `symboltoken` / `tag` legs follow the SmartAPI contract.
+
+use uuid::Uuid;
 
 use tantra_core::{
     Exchange, InstrumentId, OrderRequest, OrderSide, OrderType, Price, Quantity, TimeInForce,
 };
 use tantra_exec_angelone::build_order_payload;
+use tantra_exec_core::tag::{ANGELONE_TAG_MAX_LEN, DecodedOrderTag, OrderTag};
 use tantra_exec_core::types::ProductType;
 
 fn request(order_type: OrderType) -> OrderRequest {
@@ -26,8 +29,19 @@ fn request(order_type: OrderType) -> OrderRequest {
 
 #[test]
 fn market_order_payload() {
-    let payload =
-        build_order_payload(&request(OrderType::Market), ProductType::CncDelivery).unwrap();
+    let cid = Uuid::parse_str("01234567-89ab-4cde-8123-456789abcdef").unwrap();
+    let instrument = InstrumentId::try_new(Exchange::Nse, "RELIANCE")
+        .unwrap()
+        .with_token("2885".to_string());
+    let req = OrderRequest::with_id(
+        cid,
+        instrument,
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from_u64(25),
+        "ALGO-1",
+    );
+    let payload = build_order_payload(&req, ProductType::CncDelivery).unwrap();
     assert_eq!(payload["variety"], "NORMAL");
     assert_eq!(payload["tradingsymbol"], "RELIANCE");
     assert_eq!(payload["symboltoken"], "2885");
@@ -40,7 +54,14 @@ fn market_order_payload() {
     assert_eq!(payload["triggerprice"], "0.00");
     assert_eq!(payload["disclosedquantity"], "0");
     assert_eq!(payload["duration"], "DAY");
-    assert_eq!(payload["tag"], "ALGO-1");
+
+    // Golden vector: 20-char compact Base32 correlation tag from client_order_id.
+    let expected_tag = OrderTag::from_request(&req).wire_tag_20();
+    assert_eq!(expected_tag, "AERUKZ4JVNGN5AJDIVTQ");
+    let wire_tag = payload["tag"].as_str().unwrap();
+    assert_eq!(wire_tag, expected_tag);
+    assert!(wire_tag.len() <= ANGELONE_TAG_MAX_LEN);
+    assert!(DecodedOrderTag::decode(wire_tag).unwrap().matches(cid));
 }
 
 #[test]
@@ -87,7 +108,7 @@ fn sell_side_and_ioc_duration() {
 }
 
 #[test]
-fn symboltoken_falls_back_to_symbol() {
+fn symboltoken_falls_back_to_symbol_and_always_tags_client_order_id() {
     let instrument = InstrumentId::try_new(Exchange::Nfo, "NIFTY24DEC24000CE").unwrap();
     let order = OrderRequest::new(
         instrument,
@@ -96,16 +117,10 @@ fn symboltoken_falls_back_to_symbol() {
         Quantity::from_u64(50),
         String::new(),
     );
+    let cid = order.client_order_id;
     let payload = build_order_payload(&order, ProductType::CncDelivery).unwrap();
     assert_eq!(payload["symboltoken"], "NIFTY24DEC24000CE");
-    // Empty algo id → no tag field.
-    assert!(payload.get("tag").is_none());
-}
-
-#[test]
-fn empty_algo_id_omits_tag() {
-    let mut order = request(OrderType::Market);
-    order.algo_id = String::new();
-    let payload = build_order_payload(&order, ProductType::CncDelivery).unwrap();
-    assert!(payload.get("tag").is_none());
+    // Empty algo_id still carries client_order_id tag for idempotent reconciliation.
+    let wire_tag = payload.get("tag").and_then(|v| v.as_str()).unwrap();
+    assert!(DecodedOrderTag::decode(wire_tag).unwrap().matches(cid));
 }

@@ -1,6 +1,7 @@
 //! Broker execution error taxonomy.
 
 use thiserror::Error;
+use uuid::Uuid;
 
 /// Errors encountered during order execution across broker adapters.
 #[derive(Debug, Error)]
@@ -19,13 +20,27 @@ pub enum BrokerError {
     #[error("pre-trade risk refusal: {0}")]
     RiskRefusal(Box<tantra_risk::RiskRefusal>),
 
-    /// Network or transport error communicating with broker API.
+    /// Network or transport error communicating with broker API before request
+    /// submission or on safe idempotent reads.
     #[error("network or transport error: {0}")]
     Transport(String),
 
-    /// Operation timed out.
+    /// Local operation timed out prior to network submission (e.g. rate-limiter wait).
     #[error("broker request timeout")]
     Timeout,
+
+    /// Order submission outcome is unknown (post-send timeout, connection drop,
+    /// or unreadable reply after the request may have reached the broker).
+    ///
+    /// Non-retryable without reconciliation: blind retry or failover risks
+    /// duplicate execution.
+    #[error("order submission outcome unknown for {client_order_id}: {message}")]
+    OutcomeUnknown {
+        /// Client order ID whose execution outcome could not be verified.
+        client_order_id: Uuid,
+        /// Transport or read failure description.
+        message: String,
+    },
 
     /// Order ID not found at broker.
     #[error("order not found: {0}")]
@@ -38,6 +53,14 @@ pub enum BrokerError {
     /// Local token-bucket rate limiter refused or exhausted the request.
     #[error("rate limiter exhausted: {0}")]
     RateLimited(String),
+}
+
+impl BrokerError {
+    /// True when the error represents an ambiguous post-send failure where the
+    /// venue may have accepted the order.
+    pub fn is_outcome_unknown(&self) -> bool {
+        matches!(self, Self::OutcomeUnknown { .. })
+    }
 }
 
 impl From<tantra_risk::RiskRefusal> for BrokerError {
