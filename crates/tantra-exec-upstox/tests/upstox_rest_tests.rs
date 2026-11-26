@@ -402,7 +402,7 @@ async fn positions_map_short_side_and_value_scale() {
     assert_eq!(positions[0].side, PositionSide::Short);
     assert_eq!(positions[0].quantity.value(), Decimal::from(2));
     assert_eq!(positions[0].average_price.value().to_string(), "470.25");
-    let pnl = positions[0].realized_pnl.unwrap().amount;
+    let pnl = positions[0].realized_pnl.unwrap().amount();
     assert_eq!(pnl * Decimal::from(100), Decimal::from(-1050));
     assert_eq!(
         positions[0].last_price.unwrap().value().to_string(),
@@ -434,15 +434,15 @@ async fn margins_sum_cross_segment_utilised() {
     let executor = UpstoxExecutor::with_base_url("k", "t", base);
     let margins = executor.fetch_margins().await.expect("margins");
     assert_eq!(
-        margins.available_cash.amount * Decimal::from(100),
+        margins.available_cash.amount() * Decimal::from(100),
         Decimal::from(334_040),
         "equity + commodity cash exactly"
     );
     assert_eq!(
-        margins.used_margin.amount * Decimal::from(100),
+        margins.used_margin.amount() * Decimal::from(100),
         Decimal::from(275_075)
     );
-    assert_eq!(margins.collateral.amount, Decimal::from(15_000));
+    assert_eq!(margins.collateral.amount(), Decimal::from(15_000));
 }
 
 #[test]

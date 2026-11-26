@@ -500,11 +500,11 @@ async fn margins_parse() {
     let base_url = serve(read_server()).await;
     let margins = executor(&base_url).fetch_margins().await.unwrap();
     assert_eq!(
-        margins.available_cash.amount,
+        margins.available_cash.amount(),
         rust_decimal::Decimal::from_str_exact("250000.00").unwrap()
     );
     assert_eq!(
-        margins.used_margin.amount,
+        margins.used_margin.amount(),
         rust_decimal::Decimal::from_str_exact("75000.00").unwrap()
     );
 }

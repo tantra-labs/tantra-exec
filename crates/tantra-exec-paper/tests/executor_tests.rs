@@ -66,8 +66,8 @@ async fn place_market_order_then_inspect_positions_margins_health() {
 
     // Cash: 1_000_000 + 50 * 100 = 1_005_000 (zero fees).
     let margins = exec.fetch_margins().await.unwrap();
-    assert_eq!(margins.available_cash.amount, dec!(1_005_000));
-    assert_eq!(margins.used_margin.amount, dec!(0));
+    assert_eq!(margins.available_cash.amount(), dec!(1_005_000));
+    assert_eq!(margins.used_margin.amount(), dec!(0));
 
     let health = exec.health_check().await.unwrap();
     assert_eq!(health.broker, "paper");
