@@ -10,9 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use tantra_core::{
-    Currency, InstrumentId, Money, OrderSide, OrderStatus, OrderType, Price, Quantity,
-};
+use tantra_core::{InstrumentId, Money, OrderSide, OrderStatus, OrderType, Price, Quantity};
 
 use crate::tag::DecodedOrderTag;
 
@@ -219,10 +217,13 @@ pub struct BrokerPosition {
 }
 
 impl BrokerPosition {
-    /// Net open exposure in INR (average price x quantity).
+    /// Net open exposure (average price x quantity) in the venue's currency.
     pub fn notional(&self) -> Money {
-        // INR: positions come from Indian brokers (`ProductType` is the Indian product taxonomy).
-        Money::notional(self.average_price, self.quantity, Currency::Inr)
+        Money::notional(
+            self.average_price,
+            self.quantity,
+            self.instrument.exchange().currency(),
+        )
     }
 }
 
